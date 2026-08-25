@@ -14,6 +14,10 @@ interface MovementSheetProps {
   sessionId: string | null;
   /** Suggested label for a new clip, e.g. "Set 3 — 25 lb × 10". */
   defaultLabel: string;
+  /** Set to attach a new clip to, when opened from a set row. */
+  setId?: string | null;
+  /** Land straight on the camera or the comparison instead of the list. */
+  initialMode?: Mode;
 }
 
 type Mode = 'list' | 'record' | 'compare';
@@ -29,9 +33,11 @@ export function MovementSheet({
   exerciseId,
   sessionId,
   defaultLabel,
+  setId = null,
+  initialMode = 'list',
 }: MovementSheetProps) {
   const { clips, exerciseName, deleteClip, state } = useApp();
-  const [mode, setMode] = useState<Mode>('list');
+  const [mode, setMode] = useState<Mode>(initialMode);
   /** undefined means "use the default pairing"; null means explicitly cleared. */
   const [leftPick, setLeftPick] = useState<string | null | undefined>(undefined);
   const [rightPick, setRightPick] = useState<string | null | undefined>(undefined);
@@ -157,8 +163,9 @@ export function MovementSheet({
       {mode === 'record' && (
         <VideoRecorder
           exerciseId={exerciseId}
-          exerciseLabel={name}
+          exerciseLabel={setId ? `${name} · ${defaultLabel}` : name}
           sessionId={sessionId}
+          setId={setId}
           defaultLabel={defaultLabel}
           onSaved={() => setMode('list')}
           onCancel={() => setMode('list')}

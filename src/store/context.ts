@@ -45,6 +45,7 @@ export interface NewBodyMetric {
 export interface NewClip {
   exerciseId: string;
   sessionId: string | null;
+  setId: string | null;
   durationSec: number;
   mimeType: string;
   posterUrl: string;

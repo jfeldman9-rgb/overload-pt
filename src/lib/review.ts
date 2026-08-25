@@ -177,6 +177,46 @@ export function clipsForExercise(clips: MovementClip[], exerciseId: string): Mov
     .sort((a, b) => (a.recordedAt < b.recordedAt ? 1 : -1));
 }
 
+export function clipsForSet(clips: MovementClip[], setId: string): MovementClip[] {
+  return clips
+    .filter((c) => c.setId === setId)
+    .sort((a, b) => (a.recordedAt < b.recordedAt ? 1 : -1));
+}
+
+export interface FilmedMovement {
+  exerciseId: string;
+  clips: MovementClip[];
+  latestAt: string;
+  /** Distinct calendar days with a clip — the thing being compared. */
+  dayCount: number;
+}
+
+/**
+ * Every movement that has been filmed, newest first. The review surface is
+ * organised by movement rather than by session, because the question is
+ * "how does this lift look now against last month", not "what happened on
+ * the 16th".
+ */
+export function filmedMovements(clips: MovementClip[]): FilmedMovement[] {
+  const byExercise = new Map<string, MovementClip[]>();
+  for (const clip of clips) {
+    const list = byExercise.get(clip.exerciseId);
+    if (list) list.push(clip);
+    else byExercise.set(clip.exerciseId, [clip]);
+  }
+  return [...byExercise.entries()]
+    .map(([exerciseId, list]) => {
+      const sorted = [...list].sort((a, b) => (a.recordedAt < b.recordedAt ? 1 : -1));
+      return {
+        exerciseId,
+        clips: sorted,
+        latestAt: sorted[0].recordedAt,
+        dayCount: new Set(sorted.map((c) => c.recordedAt.slice(0, 10))).size,
+      };
+    })
+    .sort((a, b) => (a.latestAt < b.latestAt ? 1 : -1));
+}
+
 /* ── Red flags ──────────────────────────────────────────────────────── */
 
 export type FlagSeverity = 'high' | 'medium';

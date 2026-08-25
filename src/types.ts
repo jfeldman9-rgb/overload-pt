@@ -220,6 +220,12 @@ export interface MovementClip {
   clientId: string;
   exerciseId: string;
   sessionId: string | null;
+  /**
+   * The set this clip was filmed on, when it was filmed from the set row.
+   * Null for clips attached to the exercise as a whole, including anything
+   * recorded before per-set filming existed.
+   */
+  setId?: string | null;
   recordedAt: string;
   durationSec: number;
   mimeType: string;

@@ -1066,6 +1066,7 @@ function Chart({
             clientId: c.id,
             exerciseId: input.exerciseId,
             sessionId: input.sessionId,
+            setId: input.setId,
             recordedAt: new Date().toISOString(),
             durationSec: input.durationSec,
             mimeType: input.mimeType,

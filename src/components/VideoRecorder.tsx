@@ -12,6 +12,8 @@ interface VideoRecorderProps {
   exerciseId: string;
   exerciseLabel: string;
   sessionId: string | null;
+  /** Set this clip belongs to, when filming from a set row. */
+  setId?: string | null;
   /** Pre-filled clip label, e.g. "Set 3 — 25 lb × 10". */
   defaultLabel: string;
   onSaved: () => void;
@@ -63,6 +65,7 @@ export function VideoRecorder({
   exerciseId,
   exerciseLabel,
   sessionId,
+  setId = null,
   defaultLabel,
   onSaved,
   onCancel,
@@ -201,6 +204,7 @@ export function VideoRecorder({
       {
         exerciseId,
         sessionId,
+        setId,
         durationSec: Math.min(maxSec, Math.round(elapsed)),
         mimeType: clip.blob.type || 'video/webm',
         posterUrl: clip.poster,

@@ -41,9 +41,20 @@ its direction, rest compliance and the one-line note; today's plan and pending p
 latest body snapshot and which lifts have a recent clip; and the handoff trail of who changed what
 and why.
 
-**Movement video.** Record a short clip from the phone camera against an exercise and a date, then
-put any two dates side by side — play them independently or together, at 1×, 0.5×, or 0.25×. Posters
-are generated at record time so clip lists are scannable without autoplaying anything. Clips are
+**Movement video, per set and over time.** During a session each set carries an optional
+**Film set** control, hanging off the row rather than taking a sixth column — the five columns are
+already tight on a phone and the steppers have to stay thumb-sized. It shows on the set being
+worked and on any set that already has film, so it never becomes five buttons at once, and a set
+completes perfectly well without ever using it. One tap opens the camera bound to that set, and the
+clip is labelled with the set it came from (`Set 2 — 30 lb × 8`).
+
+**History → Movement** is the review surface: every filmed lift, newest first, with a dated
+thumbnail strip and the number of dates on show. Open one for the full dated list and put any two
+side by side — play them independently or together, at 1×, 0.5×, or 0.25×. That is the whole point:
+squat on the 16th against squat on the 26th. Clips are also reachable from the exercise itself in a
+session, from History → Lifts, and from the video-recency list on Home.
+
+Posters are generated at record time so lists are scannable without autoplaying anything. Clips are
 capped short (15–30s, default 25s) and stored as blobs in IndexedDB, never in `localStorage`.
 
 **Body metrics.** One log sheet, not a form novel: bodyweight, body fat %, waist, resting HR, and

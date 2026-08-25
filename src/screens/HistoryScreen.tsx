@@ -7,7 +7,7 @@ import { TrendChart } from '../components/TrendChart';
 import { BigTile } from '../components/BigTile';
 import { Sheet } from '../components/Sheet';
 import { MovementSheet } from '../components/MovementSheet';
-import { durationBetween, longDate, mmss, shortDate, weight } from '../lib/format';
+import { durationBetween, longDate, mmss, relativeDay, shortDate, weight } from '../lib/format';
 import {
   completedSets,
   entryVolume,
@@ -15,14 +15,20 @@ import {
   sessionVolume,
   summarizeSession,
 } from '../lib/overload';
-import { clipsForExercise, restCompliance, restComplianceLabel, weeklyRollup } from '../lib/review';
+import {
+  clipsForExercise,
+  filmedMovements,
+  restCompliance,
+  restComplianceLabel,
+  weeklyRollup,
+} from '../lib/review';
 import { metricDelta, metricSeries } from '../lib/metrics';
 import type { Session } from '../types';
 import type { Tab } from '../App';
 
-type View = 'overview' | 'lifts' | 'sessions' | 'changes' | 'notes';
+type View = 'overview' | 'movement' | 'lifts' | 'sessions' | 'changes' | 'notes';
 
-const VIEWS: View[] = ['overview', 'lifts', 'sessions', 'changes', 'notes'];
+const VIEWS: View[] = ['overview', 'movement', 'lifts', 'sessions', 'changes', 'notes'];
 
 export function HistoryScreen({ onNavigate }: { onNavigate: (tab: Tab) => void }) {
   const { state, client, sessions, notes, voiceNotes, audit, clips, bodyMetrics, exerciseName } =
@@ -57,6 +63,10 @@ export function HistoryScreen({ onNavigate }: { onNavigate: (tab: Tab) => void }
   const sessionNameFor = (id: string | null) =>
     sessions.find((s) => s.id === id)?.name ?? 'Session';
 
+  // Organised by movement, not by session: the question is how a lift looks
+  // now against a month ago.
+  const movements = useMemo(() => filmedMovements(clips), [clips]);
+
   const weightDelta = metricDelta(bodyMetrics, 'bodyweight');
   const waistDelta = metricDelta(bodyMetrics, 'waist');
   const bfDelta = metricDelta(bodyMetrics, 'bodyFatPct');
@@ -73,13 +83,15 @@ export function HistoryScreen({ onNavigate }: { onNavigate: (tab: Tab) => void }
           <button key={v} className="chip" aria-pressed={view === v} onClick={() => setView(v)}>
             {v === 'overview'
               ? 'Overview'
-              : v === 'lifts'
-                ? 'Lifts'
-                : v === 'sessions'
-                  ? 'Sessions'
-                  : v === 'changes'
-                    ? `Changes (${audit.length})`
-                    : 'Notes'}
+              : v === 'movement'
+                ? `🎥 Movement (${clips.length})`
+                : v === 'lifts'
+                  ? 'Lifts'
+                  : v === 'sessions'
+                    ? 'Sessions'
+                    : v === 'changes'
+                      ? `Changes (${audit.length})`
+                      : 'Notes'}
           </button>
         ))}
       </div>
@@ -220,6 +232,51 @@ export function HistoryScreen({ onNavigate }: { onNavigate: (tab: Tab) => void }
           )}
         </>
       )}
+
+      {view === 'movement' &&
+        (movements.length === 0 ? (
+          <div className="empty">
+            No movement clips yet.
+            <div className="tiny faint" style={{ marginTop: 8 }}>
+              Film a set during a workout — tap <strong>Film set</strong> under the set you are on —
+              and every clip of that lift collects here by date.
+            </div>
+          </div>
+        ) : (
+          <>
+            <div className="small muted" style={{ marginBottom: 10 }}>
+              Every filmed movement, newest first. Open one to see its clips by date and put any two
+              side by side.
+            </div>
+            {movements.map((movement) => (
+              <button
+                key={movement.exerciseId}
+                className="card movementcard"
+                onClick={() => setVideoFor(movement.exerciseId)}
+              >
+                <div className="row between">
+                  <div className="grow">
+                    <strong>{exerciseName(movement.exerciseId)}</strong>
+                    <div className="small muted">
+                      {movement.clips.length} clip{movement.clips.length === 1 ? '' : 's'} across{' '}
+                      {movement.dayCount} date{movement.dayCount === 1 ? '' : 's'} · latest{' '}
+                      {relativeDay(movement.latestAt)}
+                    </div>
+                  </div>
+                  {movement.dayCount > 1 && <span className="pill accent">Compare</span>}
+                </div>
+                <div className="cliprow">
+                  {movement.clips.slice(0, 6).map((clip) => (
+                    <span key={clip.id} className="movementthumb">
+                      {clip.posterUrl ? <img src={clip.posterUrl} alt="" /> : <span>▶</span>}
+                      <span className="tiny">{shortDate(clip.recordedAt)}</span>
+                    </span>
+                  ))}
+                </div>
+              </button>
+            ))}
+          </>
+        ))}
 
       {view === 'lifts' &&
         (trackedExercises.length === 0 ? (

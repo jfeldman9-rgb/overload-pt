@@ -10,16 +10,21 @@ import { MovementSheet } from '../components/MovementSheet';
 import { VoiceNoteSheet } from '../components/VoiceNoteSheet';
 import { durationBetween, mmss, shortDate, weight } from '../lib/format';
 import { averageRest, completedSets, entryVolume, lastPerformance } from '../lib/overload';
-import { clipsForExercise } from '../lib/review';
+import { clipsForExercise, clipsForSet } from '../lib/review';
 import type { Tab } from '../App';
-import type { ExerciseEntry } from '../types';
+import type { ExerciseEntry, SetLog } from '../types';
 
-/** Label a new clip with the set it belongs to, so the list reads by itself. */
+/** Label a clip with the exact set it belongs to, so the list reads by itself. */
+function setLabel(set: SetLog, units: string): string {
+  return `Set ${set.setNumber} — ${set.weight ? `${set.weight} ${units} × ` : ''}${set.reps}`;
+}
+
+/** Fallback for a clip attached to the exercise rather than one set. */
 function clipLabelFor(entry: ExerciseEntry, units: string): string {
   const done = completedSets(entry);
   const last = done[done.length - 1] ?? entry.sets[0];
   if (!last) return 'Movement clip';
-  return `Set ${last.setNumber} — ${last.weight ? `${last.weight} ${units} × ` : ''}${last.reps}`;
+  return setLabel(last, units);
 }
 
 /** The set the athlete is on: first unlogged set, scanning exercises in order. */
@@ -67,6 +72,10 @@ export function ActiveWorkout({ onNavigate, dockSlot }: ActiveWorkoutProps) {
   const [finishOpen, setFinishOpen] = useState(false);
   const [sessionNote, setSessionNote] = useState('');
   const [videoTarget, setVideoTarget] = useState<ExerciseEntry | null>(null);
+  /** Filming a specific set: which set, and whether to open the camera. */
+  const [filmTarget, setFilmTarget] = useState<
+    { entry: ExerciseEntry; set: SetLog; record: boolean } | null
+  >(null);
   const [voiceOpen, setVoiceOpen] = useState(false);
   const [voiceExerciseId, setVoiceExerciseId] = useState<string | null>(null);
 
@@ -219,6 +228,9 @@ export function ActiveWorkout({ onNavigate, dockSlot }: ActiveWorkoutProps) {
                 onUpdateSet={(setId, patch) => updateSet(entry.id, setId, patch)}
                 onToggleSet={(setId) => handleToggleSet(entry, setId)}
                 onRemoveSet={(setId) => removeSet(entry.id, setId)}
+                clipsForSet={(setId) => clipsForSet(clips, setId)}
+                onFilmSet={(set) => setFilmTarget({ entry, set, record: true })}
+                onOpenSetClips={(set) => setFilmTarget({ entry, set, record: false })}
               />
 
               {prior && (
@@ -349,6 +361,18 @@ export function ActiveWorkout({ onNavigate, dockSlot }: ActiveWorkoutProps) {
           exerciseId={videoTarget.exerciseId}
           sessionId={session.id}
           defaultLabel={clipLabelFor(videoTarget, state.settings.units)}
+        />
+      )}
+
+      {filmTarget && (
+        <MovementSheet
+          open
+          onClose={() => setFilmTarget(null)}
+          exerciseId={filmTarget.entry.exerciseId}
+          sessionId={session.id}
+          setId={filmTarget.set.id}
+          defaultLabel={setLabel(filmTarget.set, state.settings.units)}
+          initialMode={filmTarget.record ? 'record' : 'compare'}
         />
       )}
 
