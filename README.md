@@ -115,9 +115,17 @@ cp .env.example .env.local   # then fill in
 Without them the app is fully functional offline. No keys are committed, and only the anon key ever
 belongs in a client bundle.
 
-**Export and import** live on the same Backup sheet: JSON for every chart, note, measurement, and
-clip record, plus the video and audio files named by their storage key. Both re-import, so data is
-never trapped in one device or one vendor.
+**Export and import** live on the same Backup sheet. Export produces **one `.zip`** holding
+`chart.json` plus every video and audio file, and it imports back on any device. It is a two-step
+control on purpose: building the bundle has to read media out of IndexedDB, and any `await` spends
+the transient activation that both `navigator.share()` and a programmatic download require — which
+is why a loop of one-download-per-clip cannot work on an iPhone. Where the browser can share files
+(iOS Safari, Android Chrome) the save button hands the file to the OS share sheet, so
+*Save to Files* works; elsewhere it falls back to a normal download. A charts-only JSON export is
+there too when the media is not wanted, and loose media files from an older export still import.
+
+The archive is written with stored (uncompressed) entries — video is already compressed, so deflate
+would cost CPU for nothing — and it is a normal zip that `unzip` and any archive tool will open.
 
 A chart written by the earlier localStorage-only version is migrated automatically on first load.
 

@@ -1,4 +1,5 @@
 import { createContext, useContext } from 'react';
+import type { SaveOutcome } from '../lib/media';
 import type {
   AppState,
   AuditEvent,
@@ -60,6 +61,17 @@ export interface NewVoiceNote {
   mimeType: string;
   transcriptionSupported: boolean;
   trainerOnly: boolean;
+}
+
+/** A backup bundle built and held in memory, waiting for a save tap. */
+export interface PreparedBackup {
+  blob: Blob;
+  filename: string;
+  chartCount: number;
+  mediaCount: number;
+  /** Clips or notes whose bytes are no longer on this device. */
+  missingMedia: number;
+  byteSize: number;
 }
 
 export interface AppContextValue {
@@ -165,8 +177,11 @@ export interface AppContextValue {
   backupStatus: BackupStatus;
   retryBackup: () => Promise<void>;
   exportChartJson: () => void;
-  exportMediaFiles: () => Promise<number>;
-  importChartJson: (file: File) => Promise<string>;
+  /** Builds the single-file bundle. Async, so it cannot also save. */
+  prepareBackup: () => Promise<PreparedBackup>;
+  /** Call straight from a tap: sharing and downloading both need activation. */
+  saveBackup: (prepared: PreparedBackup) => Promise<SaveOutcome>;
+  importBackupFile: (file: File) => Promise<string>;
   importMediaFiles: (files: FileList) => Promise<number>;
 }
 

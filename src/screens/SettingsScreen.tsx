@@ -1,9 +1,9 @@
-import { useState } from 'react';
 import { useApp } from '../store/AppContext';
 import { EXERCISES } from '../data/exercises';
 import { therapistLabel } from '../store/seed';
 import { storageKind } from '../lib/idb';
 import { backupLabel } from '../lib/backup';
+import { BackupExport } from '../components/BackupExport';
 
 function Toggle({
   label,
@@ -47,10 +47,7 @@ export function SettingsScreen() {
     lockedClients,
     exportableClients,
     backupStatus,
-    exportChartJson,
-    exportMediaFiles,
   } = useApp();
-  const [message, setMessage] = useState('');
   const isTrainer = state.role === 'trainer';
 
   // Counts and exports follow the same scope: a client sees their chart only.
@@ -222,20 +219,8 @@ export function SettingsScreen() {
           IndexedDB is the source of truth, including video and audio. Every change is written here
           first and then queued for the cloud, so the app works with no signal in the clinic.
         </div>
-        <button className="btn block" onClick={exportChartJson}>
-          {isTrainer ? `Export all charts (${exportableClients.length}) as JSON` : 'Export your chart (JSON)'}
-        </button>
-        <button
-          className="btn block"
-          style={{ marginTop: 8 }}
-          onClick={() =>
-            void exportMediaFiles().then((n) =>
-              setMessage(n ? `Downloaded ${n} media file(s).` : 'No recorded media on this device.'),
-            )
-          }
-        >
-          Export video + audio files
-        </button>
+        <BackupExport compact />
+
         {isTrainer && (
           <button
             className="btn block danger"
@@ -251,7 +236,6 @@ export function SettingsScreen() {
             Reset to demo data
           </button>
         )}
-        {message && <div className="notice">{message}</div>}
         <div className="tiny faint" style={{ marginTop: 10 }}>
           {isTrainer
             ? 'Reset clears chart data for every client on this device. Recorded video and audio blobs stay in IndexedDB until you delete the clip that owns them.'

@@ -28,7 +28,8 @@ import { buildExerciseIndex, EXERCISES } from '../data/exercises';
 import { uid } from '../lib/format';
 import { deleteBlob, getBlob, putBlob, readDoc } from '../lib/idb';
 import { backup, STATE_DOC } from '../lib/backup';
-import { downloadBlob } from '../lib/media';
+import { downloadBlob, saveFile } from '../lib/media';
+import { createZip, readZip } from '../lib/zip';
 import { isConfigured } from '../lib/supabase';
 import {
   AppContext,
@@ -38,6 +39,7 @@ import {
   type NewBodyMetric,
   type NewClip,
   type NewVoiceNote,
+  type PreparedBackup,
 } from './context';
 import { seedState, STATE_VERSION, therapistLabel } from './seed';
 
@@ -206,6 +208,14 @@ function makeAudit(state: AppState, input: AuditInput): AuditEvent {
     reason: input.reason ?? null,
     sessionId: input.sessionId ?? null,
   };
+}
+
+/** Filename-safe scope tag: trailing punctuation must not leave a dangling dash. */
+function slugify(value: string): string {
+  return value
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/(^-+|-+$)/g, '');
 }
 
 function extensionFor(mimeType: string): string {
@@ -1195,39 +1205,101 @@ function Chart({
       state: { ...state, clients: exportableClients },
     };
     const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
-    const scope = state.role === 'patient' ? client.name.replace(/[^a-z0-9]+/gi, '-') : 'clinic';
-    downloadBlob(
-      blob,
-      `overload-pt-${scope}-${new Date().toISOString().slice(0, 10)}.json`.toLowerCase(),
-    );
+    const scope = state.role === 'patient' ? slugify(client.name) : 'clinic';
+    downloadBlob(blob, `overload-pt-${scope}-${new Date().toISOString().slice(0, 10)}.json`);
   }, [state, exportableClients, client.name]);
 
-  const exportMediaFiles = useCallback(async () => {
-    let count = 0;
-    for (const c of exportableClients) {
-      const items: Array<{ key: string; mimeType: string }> = [
+  /** Every media blob key the current scope is allowed to take with it. */
+  const mediaManifest = useCallback(
+    () =>
+      exportableClients.flatMap((c) => [
         ...c.clips.flatMap((x) => (x.blobKey ? [{ key: x.blobKey, mimeType: x.mimeType }] : [])),
         ...c.voiceNotes.flatMap((x) =>
           x.blobKey ? [{ key: x.blobKey, mimeType: x.mimeType }] : [],
         ),
-      ];
-      for (const item of items) {
-        const blob = await getBlob(item.key);
-        if (!blob) continue;
-        downloadBlob(blob, `${item.key}.${extensionFor(item.mimeType)}`);
-        count += 1;
-      }
-    }
-    return count;
-  }, [exportableClients]);
+      ]),
+    [exportableClients],
+  );
 
-  const importChartJson = useCallback(
+  /**
+   * One file, so a backup can leave an iPhone: Safari allows a single download
+   * per tap, and the previous export looped over every clip after an await,
+   * which loses the activation the download needs.
+   */
+  const prepareBackup = useCallback(async (): Promise<PreparedBackup> => {
+    const chart = {
+      app: 'overload-pt',
+      version: STATE_VERSION,
+      exportedAt: new Date().toISOString(),
+      state: { ...state, clients: exportableClients },
+    };
+    const entries = [
+      {
+        name: 'chart.json',
+        data: new TextEncoder().encode(JSON.stringify(chart, null, 2)),
+      },
+    ];
+
+    let missingMedia = 0;
+    for (const item of mediaManifest()) {
+      const blob = await getBlob(item.key);
+      if (!blob) {
+        missingMedia += 1;
+        continue;
+      }
+      entries.push({
+        name: `media/${item.key}.${extensionFor(item.mimeType)}`,
+        data: new Uint8Array(await blob.arrayBuffer()),
+      });
+    }
+
+    const blob = createZip(entries);
+    const scope = state.role === 'patient' ? slugify(client.name) : 'clinic';
+    return {
+      blob,
+      filename: `overload-pt-${scope}-${new Date().toISOString().slice(0, 10)}.zip`,
+      chartCount: exportableClients.length,
+      mediaCount: entries.length - 1,
+      missingMedia,
+      byteSize: blob.size,
+    };
+  }, [state, exportableClients, client.name, mediaManifest]);
+
+  const saveBackup = useCallback(
+    (prepared: PreparedBackup) => saveFile(prepared.blob, prepared.filename),
+    [],
+  );
+
+  const importBackupFile = useCallback(
     async (file: File) => {
       if (state.role !== 'trainer') {
         throw new Error('Importing a backup replaces every chart, so it is a therapist action.');
       }
-      const text = await file.text();
-      const parsed = JSON.parse(text) as { state?: AppState; version?: number };
+
+      const isZip =
+        file.type === 'application/zip' || /\.zip$/i.test(file.name);
+      let chartText: string;
+      let restoredMedia = 0;
+
+      if (isZip) {
+        const entries = readZip(await file.arrayBuffer());
+        const chart = entries.find((e) => e.name === 'chart.json');
+        if (!chart) {
+          throw new Error('That archive has no chart.json — it is not an Overload PT backup.');
+        }
+        chartText = new TextDecoder().decode(chart.data);
+        for (const entry of entries) {
+          if (!entry.name.startsWith('media/')) continue;
+          const key = entry.name.slice('media/'.length).split('.')[0];
+          if (!key) continue;
+          await putBlob(key, new Blob([entry.data.slice()]));
+          restoredMedia += 1;
+        }
+      } else {
+        chartText = await file.text();
+      }
+
+      const parsed = JSON.parse(chartText) as { state?: AppState; version?: number };
       const incoming = parsed.state ?? (parsed as unknown as AppState);
       if (!incoming || !Array.isArray(incoming.clients)) {
         throw new Error('That file does not look like an Overload PT backup.');
@@ -1238,8 +1310,12 @@ function Chart({
         );
       }
       commit('Imported a backup', () => incoming);
+
       const clips = incoming.clients.reduce((n, c) => n + c.clips.length, 0);
-      return `${incoming.clients.length} charts, ${clips} clips. Import the media files next if you exported them.`;
+      const media = isZip
+        ? `${restoredMedia} media file${restoredMedia === 1 ? '' : 's'} restored`
+        : 'no media in a JSON-only backup';
+      return `${incoming.clients.length} charts, ${clips} clip records, ${media}.`;
     },
     [commit, state.role],
   );
@@ -1319,8 +1395,9 @@ function Chart({
     backupStatus,
     retryBackup,
     exportChartJson,
-    exportMediaFiles,
-    importChartJson,
+    prepareBackup,
+    saveBackup,
+    importBackupFile,
     importMediaFiles,
   };
 

@@ -149,7 +149,8 @@ test('backup status renders and reports on-device only when no keys are set', as
   await expect(sheet).toContainText('IndexedDB');
   await expect(sheet).toContainText('Not configured');
   await expect(sheet).toContainText('nothing has left this device');
-  await expect(sheet.getByRole('button', { name: /Export all charts/ })).toBeVisible();
+  await expect(sheet.getByRole('button', { name: /Prepare backup file/ })).toBeVisible();
+  await expect(sheet.getByRole('button', { name: /Charts only, no media/ })).toBeVisible();
   // Without keys there is no cloud to retry against, so no retry button is offered.
   await expect(sheet.getByRole('button', { name: /Retry cloud backup/ })).toHaveCount(0);
 });
@@ -194,8 +195,10 @@ test('a client can only export their own chart', async ({ page }) => {
   const sheet = page.getByRole('dialog', { name: 'Backup' });
 
   // Export is scoped and says so; the clinic-wide export is a therapist action.
-  await expect(sheet.getByRole('button', { name: 'Export your chart (JSON)' })).toBeVisible();
-  await expect(sheet.getByRole('button', { name: /Export all charts/ })).toHaveCount(0);
+  await expect(
+    sheet.getByRole('button', { name: 'Your chart only, no media (JSON)' }),
+  ).toBeVisible();
+  await expect(sheet.getByRole('button', { name: /Charts only, no media/ })).toHaveCount(0);
   await expect(sheet).toContainText('Other patients in the clinic are not included');
 
   // So is import: restoring a backup would replace every chart on the device.
@@ -206,8 +209,10 @@ test('a client can only export their own chart', async ({ page }) => {
   await sheet.getByRole('button', { name: 'Done' }).click();
   await page.getByRole('navigation', { name: 'Main navigation' })
     .getByRole('button', { name: 'Settings' }).click();
-  await expect(page.getByRole('button', { name: 'Export your chart (JSON)' })).toBeVisible();
-  await expect(page.getByRole('button', { name: /Export all charts/ })).toHaveCount(0);
+  await expect(
+    page.getByRole('button', { name: 'Your chart only, no media (JSON)' }),
+  ).toBeVisible();
+  await expect(page.getByRole('button', { name: /Charts only, no media/ })).toHaveCount(0);
   await expect(page.getByRole('button', { name: 'Reset to demo data' })).toHaveCount(0);
 });
 
@@ -218,7 +223,7 @@ test('the exported client chart carries no other patient', async ({ page }) => {
 
   const sheet = page.getByRole('dialog', { name: 'Backup' });
   const download = page.waitForEvent('download');
-  await sheet.getByRole('button', { name: 'Export your chart (JSON)' }).click();
+  await sheet.getByRole('button', { name: 'Your chart only, no media (JSON)' }).click();
   const file = await download;
 
   const stream = await file.createReadStream();

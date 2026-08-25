@@ -71,7 +71,7 @@ is set to 50 MB as a backstop. Voice notes carry audio only.
 
 ## Getting data out without Supabase
 
-Backup → *Export all charts (JSON)* writes every chart, note, measurement, and
-clip record. *Export video + audio files* downloads the blobs, named by their
-storage key, and the import controls on the same sheet restore both. Data is
-never trapped in one device or one vendor.
+Backup → *Prepare backup file* builds one `.zip` containing `chart.json` and
+every video and audio file, and the import control on the same sheet restores
+it. On a phone the save button hands the file to the OS share sheet, so
+*Save to Files* works. Data is never trapped in one device or one vendor.

@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useApp } from '../store/AppContext';
 import { Sheet } from './Sheet';
 import { backup, backupDetail, backupLabel, backupTone } from '../lib/backup';
+import { BackupExport } from './BackupExport';
 import { storageKind } from '../lib/idb';
 import { clockTime, shortDate } from '../lib/format';
 
@@ -16,17 +17,7 @@ function when(iso: string | null): string {
  * lies is worse than no indicator.
  */
 export function BackupBar() {
-  const {
-    state,
-    client,
-    exportableClients,
-    backupStatus,
-    retryBackup,
-    exportChartJson,
-    exportMediaFiles,
-    importChartJson,
-    importMediaFiles,
-  } = useApp();
+  const { state, client, backupStatus, retryBackup, importBackupFile, importMediaFiles } = useApp();
   const [open, setOpen] = useState(false);
   const [message, setMessage] = useState('');
 
@@ -39,10 +30,6 @@ export function BackupBar() {
   const queue = backup
     .queue()
     .filter((item) => isTrainer || item.clientId === null || item.clientId === client.id);
-
-  const exportLabel = isTrainer
-    ? `Export all charts (${exportableClients.length}) as JSON`
-    : 'Export your chart (JSON)';
 
   return (
     <>
@@ -139,27 +126,7 @@ export function BackupBar() {
 
         <div className="section-label">Export a copy</div>
         <div className="card">
-          <div className="small muted" style={{ marginBottom: 10 }}>
-            {isTrainer
-              ? 'Data should never be trapped in one app. JSON holds every chart, note, measurement, and clip record; media files download alongside it and re-import by filename.'
-              : 'Your own chart only — notes, measurements, and your clip records. Other patients in the clinic are not included.'}
-          </div>
-          <button className="btn block" onClick={exportChartJson}>
-            {exportLabel}
-          </button>
-          <button
-            className="btn block"
-            style={{ marginTop: 8 }}
-            onClick={() =>
-              void exportMediaFiles().then((n) =>
-                setMessage(
-                  n ? `Downloaded ${n} media file(s).` : 'No recorded media on this device yet.',
-                ),
-              )
-            }
-          >
-            Export video + audio files
-          </button>
+          <BackupExport />
         </div>
 
         {isTrainer ? (
@@ -170,15 +137,15 @@ export function BackupBar() {
                 Importing charts replaces everything currently on this device.
               </div>
               <div className="field">
-                <label htmlFor="import-json">Charts (JSON)</label>
+                <label htmlFor="import-json">Backup file (.zip or .json)</label>
                 <input
                   id="import-json"
                   type="file"
-                  accept="application/json,.json"
+                  accept="application/zip,.zip,application/json,.json"
                   onChange={(e) => {
                     const file = e.target.files?.[0];
                     if (!file) return;
-                    void importChartJson(file)
+                    void importBackupFile(file)
                       .then((summary) => setMessage(`Imported ${summary}`))
                       .catch((error: unknown) =>
                         setMessage(error instanceof Error ? error.message : 'Import failed.'),
@@ -187,7 +154,7 @@ export function BackupBar() {
                 />
               </div>
               <div className="field" style={{ marginTop: 10 }}>
-                <label htmlFor="import-media">Media files</label>
+                <label htmlFor="import-media">Loose media files (from an older export)</label>
                 <input
                   id="import-media"
                   type="file"
@@ -196,7 +163,7 @@ export function BackupBar() {
                   onChange={(e) => {
                     const files = e.target.files;
                     if (!files?.length) return;
-                    void importMediaFiles(files).then((n) =>
+                    void importMediaFiles(files).then((n: number) =>
                       setMessage(`Restored ${n} media file(s).`),
                     );
                   }}

@@ -172,3 +172,50 @@ export function downloadBlob(blob: Blob, filename: string): void {
   anchor.click();
   setTimeout(() => URL.revokeObjectURL(url), 4000);
 }
+
+interface FileShareCapableNavigator {
+  share?: (data: { files?: File[]; title?: string; text?: string }) => Promise<void>;
+  canShare?: (data: { files?: File[] }) => boolean;
+}
+
+/**
+ * Whether this browser can hand a file to the OS share sheet.
+ *
+ * On iPhone this is the route that actually saves a backup: the share sheet
+ * offers "Save to Files", where an anchor with a `download` attribute may just
+ * display the file. Detection has to pass a real File, because Safari reports
+ * `canShare` true for text while refusing files.
+ */
+export function canShareFiles(): boolean {
+  if (typeof navigator === 'undefined') return false;
+  const nav = navigator as Navigator & FileShareCapableNavigator;
+  if (!nav.share || !nav.canShare) return false;
+  try {
+    const probe = new File([new Uint8Array([0])], 'probe.zip', { type: 'application/zip' });
+    return nav.canShare({ files: [probe] });
+  } catch {
+    return false;
+  }
+}
+
+export type SaveOutcome = 'shared' | 'downloaded' | 'cancelled';
+
+/**
+ * Must be called straight from a tap: both `share()` and a programmatic
+ * download need transient activation, which any preceding `await` spends.
+ */
+export async function saveFile(blob: Blob, filename: string): Promise<SaveOutcome> {
+  const nav = navigator as Navigator & FileShareCapableNavigator;
+  if (canShareFiles() && nav.share) {
+    const file = new File([blob], filename, { type: blob.type || 'application/octet-stream' });
+    try {
+      await nav.share({ files: [file], title: filename });
+      return 'shared';
+    } catch (error) {
+      // The user dismissing the sheet is not a failure to fall back from.
+      if (error instanceof Error && error.name === 'AbortError') return 'cancelled';
+    }
+  }
+  downloadBlob(blob, filename);
+  return 'downloaded';
+}
