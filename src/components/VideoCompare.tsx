@@ -55,9 +55,7 @@ function ComparePanel({
             {clip.posterUrl && <img src={clip.posterUrl} alt="" />}
             <div className="frame-overlay">
               <span className="tiny">
-                {clip.placeholder
-                  ? 'Demo placeholder — record a clip to replace it.'
-                  : 'Video data is not on this device.'}
+                {clip.placeholder ? 'Demo — record to replace' : 'Not on this device'}
               </span>
             </div>
           </>

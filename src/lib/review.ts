@@ -188,7 +188,10 @@ export interface RedFlag {
   detail: string;
 }
 
-const CONCERN_WORDS = /\b(pain|painful|sore|swell|swelling|rom|range of motion|giving way|catch|catching|numb|tingl|flare|instab)\w*/i;
+// Deliberately excludes plain soreness: post-session DOMS is expected and
+// flagging it would bury the notes that matter.
+const CONCERN_WORDS =
+  /\b(pain|painful|swell|swelling|effusion|rom|range of motion|giving way|gave way|catching|locked|numb|tingl|flare|flaring|instability|unstable)\w*/i;
 
 /**
  * Only things a therapist would act on. Deliberately short: pain trending up,
@@ -265,8 +268,11 @@ export function redFlags(
     });
   }
 
+  // Patient-reported only: a therapist's own note is already in the handoff
+  // section, and repeating it here dilutes the flags that need acting on.
   const since = done[1]?.startedAt ?? null;
   const newConcern = visibleNotes
+    .filter((n) => n.author === 'patient')
     .filter((n) => (since ? n.createdAt > since : true))
     .filter((n) => CONCERN_WORDS.test(n.body))
     .sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1))[0];
@@ -274,7 +280,7 @@ export function redFlags(
     flags.push({
       id: 'note-concern',
       severity: 'medium',
-      label: `New pain/ROM note — ${newConcern.authorName}`,
+      label: `New pain/ROM report — ${newConcern.authorName}`,
       detail: firstLine(newConcern.body, 100),
     });
   }

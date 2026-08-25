@@ -58,6 +58,7 @@ export function VoiceNoteSheet({
   /** Recogniser callbacks outlive the render that created them. */
   const recordingRef = useRef(false);
   const finalRef = useRef('');
+  const listeningRef = useRef(false);
 
   const cleanup = useCallback(() => {
     recordingRef.current = false;
@@ -92,6 +93,7 @@ export function VoiceNoteSheet({
     const Ctor = speechRecognitionCtor();
     if (!Ctor) {
       supportedRef.current = false;
+      listeningRef.current = false;
       setNotice('Live transcription is not supported on this browser — audio is still recording.');
       return;
     }
@@ -116,13 +118,25 @@ export function VoiceNoteSheet({
       setInterim(pending.trim());
     };
     recognition.onerror = (event) => {
-      if (event.error === 'not-allowed' || event.error === 'service-not-allowed') {
+      const code = event.error ?? 'unknown';
+      // Silence and a manual stop are normal; anything else is worth saying.
+      if (code === 'no-speech' || code === 'aborted') return;
+      if (code === 'not-allowed' || code === 'service-not-allowed') {
+        supportedRef.current = false;
         setNotice('The browser blocked speech recognition — audio is still recording.');
+        return;
       }
+      // A recogniser can exist and still have no service behind it.
+      supportedRef.current = false;
+      setNotice(
+        code === 'network'
+          ? 'Live transcription is unavailable on this browser — audio is still recording.'
+          : `Transcription stopped (${code}) — audio is still recording.`,
+      );
     };
     recognition.onend = () => {
       // Chrome ends the session on silence; keep listening while recording.
-      if (!recordingRef.current) return;
+      if (!recordingRef.current || !supportedRef.current) return;
       try {
         recognition.start();
       } catch {
@@ -132,6 +146,7 @@ export function VoiceNoteSheet({
     try {
       recognition.start();
       recognitionRef.current = recognition;
+      listeningRef.current = true;
     } catch {
       supportedRef.current = false;
       setNotice('Speech recognition could not start — audio is still recording.');
@@ -141,12 +156,22 @@ export function VoiceNoteSheet({
   /** The transcript becomes the editable note the moment recording ends. */
   const toReview = () => {
     setEdited(finalRef.current.trim());
+    // A recogniser can start, report no error, and still return nothing. Say so
+    // rather than presenting an empty note as a successful transcription.
+    if (listeningRef.current && !finalRef.current.trim()) {
+      setNotice(
+        (current) =>
+          current ||
+          'No words came through the transcriber — type the note instead. The audio is saved either way.',
+      );
+    }
     setPhase('review');
   };
 
   const start = async () => {
     setNotice('');
     finalRef.current = '';
+    listeningRef.current = false;
     setFinalText('');
     setInterim('');
     setEdited('');

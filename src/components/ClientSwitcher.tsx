@@ -135,7 +135,9 @@ export function ClientSwitcher({ open, onClose }: { open: boolean; onClose: () =
                           type="checkbox"
                           checked={c.sharedTherapistIds.includes(t.id) || c.sharedWithClinic}
                           disabled={c.sharedWithClinic}
-                          onChange={(e) => setShareWithTherapist(c.id, t.id, e.target.checked)}
+                          onChange={(e) =>
+                            setShareWithTherapist(c.id, t.id, e.target.checked, reason.trim() || undefined)
+                          }
                           aria-label={`Share ${c.name} with ${t.name}`}
                           style={{ width: 24, height: 24 }}
                         />

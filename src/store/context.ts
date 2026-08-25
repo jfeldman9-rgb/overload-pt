@@ -85,7 +85,12 @@ export interface AppContextValue {
   setActingTherapist: (id: string) => void;
   setActiveClient: (id: string) => void;
   setShareWithClinic: (clientId: string, shared: boolean, reason?: string) => void;
-  setShareWithTherapist: (clientId: string, therapistId: string, shared: boolean) => void;
+  setShareWithTherapist: (
+    clientId: string,
+    therapistId: string,
+    shared: boolean,
+    reason?: string,
+  ) => void;
 
   /* Active chart, already scoped and permission-filtered */
   program: Program;

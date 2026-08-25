@@ -142,19 +142,32 @@ export function HomeScreen({ onNavigate, onOpenRoster }: HomeScreenProps) {
         </div>
       </div>
 
-      {isTrainer && flags.length > 0 && (
+      {isTrainer && visit && (
         <>
           <div className="section-label">Red flags</div>
           <div className="card flags">
-            {flags.map((flag) => (
-              <div key={flag.id} className={`flag ${flag.severity}`}>
+            {flags.length === 0 ? (
+              <div className="flag clear">
                 <span className="flag-dot" aria-hidden="true" />
                 <div className="grow">
-                  <strong className="small">{flag.label}</strong>
-                  <div className="tiny faint">{flag.detail}</div>
+                  <strong className="small">Nothing to act on</strong>
+                  <div className="tiny faint">
+                    Pain not rising, attendance on cadence, no stalled lifts, no new pain or ROM
+                    note.
+                  </div>
                 </div>
               </div>
-            ))}
+            ) : (
+              flags.map((flag) => (
+                <div key={flag.id} className={`flag ${flag.severity}`}>
+                  <span className="flag-dot" aria-hidden="true" />
+                  <div className="grow">
+                    <strong className="small">{flag.label}</strong>
+                    <div className="tiny faint">{flag.detail}</div>
+                  </div>
+                </div>
+              ))
+            )}
           </div>
         </>
       )}

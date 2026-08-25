@@ -300,7 +300,7 @@ export function HistoryScreen({ onNavigate }: { onNavigate: (tab: Tab) => void }
                   decimals={0}
                 />
 
-                {restPoints.length > 1 && (
+                {restPoints.length > 2 && (
                   <Sparkline
                     values={restPoints.map((p) => p.avgRestSec as number)}
                     ariaLabel={`${exerciseName(id)} rest taken`}

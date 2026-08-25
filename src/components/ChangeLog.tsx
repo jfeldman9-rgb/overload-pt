@@ -13,6 +13,12 @@ const FIELD_LABELS: Record<string, string> = {
   exercise: 'Exercise swapped',
   'exercise added': 'Exercise added',
   'exercise removed': 'Exercise removed',
+  'measurements logged': 'Measurements logged',
+  'movement clip recorded': 'Movement clip',
+  'voice note recorded': 'Voice note',
+  'shared with clinic': 'Clinic sharing',
+  'access granted': 'Access granted',
+  'access revoked': 'Access revoked',
 };
 
 const ICONS: Record<string, string> = {
@@ -22,6 +28,10 @@ const ICONS: Record<string, string> = {
   set: '#',
   exercise_swap: '⇄',
   settings: '⚙',
+  body_metric: '⚖',
+  clip: '🎥',
+  voice_note: '🎙',
+  sharing: '👥',
 };
 
 function renderValue(value: string | number | null): string {

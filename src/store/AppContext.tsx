@@ -377,7 +377,7 @@ function Chart({ initial, children }: { initial: AppState; children: ReactNode }
   );
 
   const setShareWithTherapist = useCallback(
-    (clientId: string, therapistId: string, shared: boolean) => {
+    (clientId: string, therapistId: string, shared: boolean, reason?: string) => {
       commitChart(
         shared ? 'Shared chart with colleague' : 'Revoked colleague access',
         (c) => ({
@@ -394,6 +394,7 @@ function Chart({ initial, children }: { initial: AppState; children: ReactNode }
             field: shared ? 'access granted' : 'access revoked',
             from: null,
             to: t ? therapistLabel(t) : therapistId,
+            reason: reason ?? null,
           };
         },
         clientId,
