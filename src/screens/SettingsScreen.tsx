@@ -45,13 +45,16 @@ export function SettingsScreen() {
     client,
     visibleClients,
     lockedClients,
+    exportableClients,
     backupStatus,
     exportChartJson,
     exportMediaFiles,
   } = useApp();
   const [message, setMessage] = useState('');
+  const isTrainer = state.role === 'trainer';
 
-  const mediaCount = state.clients.reduce(
+  // Counts and exports follow the same scope: a client sees their chart only.
+  const mediaCount = exportableClients.reduce(
     (n, c) =>
       n +
       c.clips.filter((x) => x.blobKey).length +
@@ -141,21 +144,46 @@ export function SettingsScreen() {
           <span className="small muted">Clinic</span>
           <strong className="small">{state.clinicName}</strong>
         </div>
-        <div className="row between" style={{ marginTop: 8 }}>
-          <span className="small muted">Therapists</span>
-          <strong className="small">{therapists.map(therapistLabel).join(' · ')}</strong>
-        </div>
-        <div className="row between" style={{ marginTop: 8 }}>
-          <span className="small muted">Charts you can open</span>
-          <strong className="small">
-            {visibleClients.length}
-            {lockedClients.length > 0 ? ` (${lockedClients.length} locked)` : ''}
-          </strong>
-        </div>
-        <div className="row between" style={{ marginTop: 8 }}>
-          <span className="small muted">Open chart</span>
-          <strong className="small">{client.name}</strong>
-        </div>
+        {isTrainer ? (
+          <>
+            <div className="row between" style={{ marginTop: 8 }}>
+              <span className="small muted">Therapists</span>
+              <strong className="small">{therapists.map(therapistLabel).join(' · ')}</strong>
+            </div>
+            <div className="row between" style={{ marginTop: 8 }}>
+              <span className="small muted">Charts you can open</span>
+              <strong className="small">
+                {visibleClients.length}
+                {lockedClients.length > 0 ? ` (${lockedClients.length} locked)` : ''}
+              </strong>
+            </div>
+            <div className="row between" style={{ marginTop: 8 }}>
+              <span className="small muted">Open chart</span>
+              <strong className="small">{client.name}</strong>
+            </div>
+          </>
+        ) : (
+          <>
+            {/* A client sees who treats them, not the staff list or the caseload. */}
+            <div className="row between" style={{ marginTop: 8 }}>
+              <span className="small muted">Your therapist</span>
+              <strong className="small">
+                {(() => {
+                  const own = therapists.find((t) => t.id === client.therapistId);
+                  return own ? therapistLabel(own) : '—';
+                })()}
+              </strong>
+            </div>
+            <div className="row between" style={{ marginTop: 8 }}>
+              <span className="small muted">Shared with the clinic</span>
+              <strong className="small">{client.sharedWithClinic ? 'Yes' : 'No'}</strong>
+            </div>
+            <div className="tiny faint" style={{ marginTop: 8 }}>
+              Sharing lets a covering therapist open your chart when yours is away. Only your own
+              chart is on this screen.
+            </div>
+          </>
+        )}
       </div>
 
       <div className="section-label">Library</div>
@@ -195,7 +223,7 @@ export function SettingsScreen() {
           first and then queued for the cloud, so the app works with no signal in the clinic.
         </div>
         <button className="btn block" onClick={exportChartJson}>
-          Export all charts (JSON)
+          {isTrainer ? `Export all charts (${exportableClients.length}) as JSON` : 'Export your chart (JSON)'}
         </button>
         <button
           className="btn block"
@@ -208,21 +236,26 @@ export function SettingsScreen() {
         >
           Export video + audio files
         </button>
-        <button
-          className="btn block danger"
-          style={{ marginTop: 10 }}
-          onClick={() => {
-            if (confirm('Reset to demo data? All logged sessions, notes, and metrics will be lost.')) {
-              resetData();
-            }
-          }}
-        >
-          Reset to demo data
-        </button>
+        {isTrainer && (
+          <button
+            className="btn block danger"
+            style={{ marginTop: 10 }}
+            onClick={() => {
+              if (
+                confirm('Reset to demo data? All logged sessions, notes, and metrics will be lost.')
+              ) {
+                resetData();
+              }
+            }}
+          >
+            Reset to demo data
+          </button>
+        )}
         {message && <div className="notice">{message}</div>}
         <div className="tiny faint" style={{ marginTop: 10 }}>
-          Reset clears chart data. Recorded video and audio blobs stay in IndexedDB until you delete
-          the clip that owns them.
+          {isTrainer
+            ? 'Reset clears chart data for every client on this device. Recorded video and audio blobs stay in IndexedDB until you delete the clip that owns them.'
+            : 'Export covers your chart only. Other patients in the clinic are never included.'}
         </div>
       </div>
     </>

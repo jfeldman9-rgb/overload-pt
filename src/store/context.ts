@@ -79,6 +79,11 @@ export interface AppContextValue {
   /** Charts in the clinic that are not shared with them. */
   lockedClients: ClientRecord[];
   client: ClientRecord;
+  /**
+   * Charts the current view may take off the device. Every chart for a
+   * therapist; only their own for a client.
+   */
+  exportableClients: ClientRecord[];
   /** False when a colleague opened a chart they can read but not own. */
   isOwningTherapist: boolean;
   canEdit: boolean;

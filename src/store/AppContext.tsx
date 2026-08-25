@@ -122,14 +122,22 @@ function migrateLegacy(): AppState | null {
   };
 }
 
-async function loadState(): Promise<AppState> {
+interface LoadedState {
+  state: AppState;
+  /** False when this chart has never been written to IndexedDB. */
+  persisted: boolean;
+}
+
+async function loadState(): Promise<LoadedState> {
   const stored = await readDoc<AppState>(STATE_DOC);
-  if (stored && stored.version === STATE_VERSION && Array.isArray(stored.clients)) return stored;
-  return migrateLegacy() ?? seedState();
+  if (stored && stored.version === STATE_VERSION && Array.isArray(stored.clients)) {
+    return { state: stored, persisted: true };
+  }
+  return { state: migrateLegacy() ?? seedState(), persisted: false };
 }
 
 export function AppProvider({ children }: { children: ReactNode }) {
-  const [initial, setInitial] = useState<AppState | null>(null);
+  const [initial, setInitial] = useState<LoadedState | null>(null);
 
   useEffect(() => {
     let alive = true;
@@ -153,7 +161,11 @@ export function AppProvider({ children }: { children: ReactNode }) {
     );
   }
 
-  return <Chart initial={initial}>{children}</Chart>;
+  return (
+    <Chart initial={initial.state} persisted={initial.persisted}>
+      {children}
+    </Chart>
+  );
 }
 
 /* ── Helpers ────────────────────────────────────────────────────────── */
@@ -204,7 +216,15 @@ function extensionFor(mimeType: string): string {
 
 /* ── Chart provider ─────────────────────────────────────────────────── */
 
-function Chart({ initial, children }: { initial: AppState; children: ReactNode }) {
+function Chart({
+  initial,
+  persisted,
+  children,
+}: {
+  initial: AppState;
+  persisted: boolean;
+  children: ReactNode;
+}) {
   const [state, setState] = useState<AppState>(initial);
   const [backupStatus, setBackupStatus] = useState<BackupStatus>(() => ({
     configured: isConfigured(),
@@ -215,8 +235,14 @@ function Chart({ initial, children }: { initial: AppState; children: ReactNode }
     lastError: null,
   }));
 
-  const summaryRef = useRef('Chart opened');
-  const firstRender = useRef(true);
+  const summaryRef = useRef('Chart created');
+  /*
+   * A chart loaded from IndexedDB is already durable, so the first render is
+   * not a change. A freshly seeded or migrated one is not durable yet, so it
+   * gets written and queued immediately — otherwise "IndexedDB is the source
+   * of truth" would only become true after the first edit.
+   */
+  const firstRender = useRef(persisted);
 
   useEffect(() => backup.subscribe(setBackupStatus), []);
 
@@ -1155,20 +1181,30 @@ function Chart({ initial, children }: { initial: AppState; children: ReactNode }
 
   const retryBackup = useCallback(() => backup.retry(), []);
 
+  /** Charts the current view is allowed to take off the device. */
+  const exportableClients = useMemo(
+    () => (state.role === 'patient' ? state.clients.filter((c) => c.id === client.id) : state.clients),
+    [state.role, state.clients, client.id],
+  );
+
   const exportChartJson = useCallback(() => {
     const payload = {
       app: 'overload-pt',
       version: STATE_VERSION,
       exportedAt: new Date().toISOString(),
-      state,
+      state: { ...state, clients: exportableClients },
     };
     const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
-    downloadBlob(blob, `overload-pt-${new Date().toISOString().slice(0, 10)}.json`);
-  }, [state]);
+    const scope = state.role === 'patient' ? client.name.replace(/[^a-z0-9]+/gi, '-') : 'clinic';
+    downloadBlob(
+      blob,
+      `overload-pt-${scope}-${new Date().toISOString().slice(0, 10)}.json`.toLowerCase(),
+    );
+  }, [state, exportableClients, client.name]);
 
   const exportMediaFiles = useCallback(async () => {
     let count = 0;
-    for (const c of state.clients) {
+    for (const c of exportableClients) {
       const items: Array<{ key: string; mimeType: string }> = [
         ...c.clips.flatMap((x) => (x.blobKey ? [{ key: x.blobKey, mimeType: x.mimeType }] : [])),
         ...c.voiceNotes.flatMap((x) =>
@@ -1183,10 +1219,13 @@ function Chart({ initial, children }: { initial: AppState; children: ReactNode }
       }
     }
     return count;
-  }, [state.clients]);
+  }, [exportableClients]);
 
   const importChartJson = useCallback(
     async (file: File) => {
+      if (state.role !== 'trainer') {
+        throw new Error('Importing a backup replaces every chart, so it is a therapist action.');
+      }
       const text = await file.text();
       const parsed = JSON.parse(text) as { state?: AppState; version?: number };
       const incoming = parsed.state ?? (parsed as unknown as AppState);
@@ -1202,7 +1241,7 @@ function Chart({ initial, children }: { initial: AppState; children: ReactNode }
       const clips = incoming.clients.reduce((n, c) => n + c.clips.length, 0);
       return `${incoming.clients.length} charts, ${clips} clips. Import the media files next if you exported them.`;
     },
-    [commit],
+    [commit, state.role],
   );
 
   const importMediaFiles = useCallback(async (files: FileList) => {
@@ -1236,6 +1275,7 @@ function Chart({ initial, children }: { initial: AppState; children: ReactNode }
     setShareWithClinic,
     setShareWithTherapist,
 
+    exportableClients,
     program: client.program,
     sessions: client.sessions,
     notes,
