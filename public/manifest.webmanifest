@@ -2,14 +2,14 @@
   "name": "Overload PT — Progressive Overload Tracker",
   "short_name": "Overload PT",
   "description": "Progressive overload workout tracking for physical therapist and patient.",
-  "start_url": "/",
+  "start_url": "/overload-pt/",
   "display": "standalone",
   "orientation": "portrait",
   "background_color": "#0b0f16",
   "theme_color": "#0b0f16",
   "icons": [
     {
-      "src": "/favicon.svg",
+      "src": "/overload-pt/favicon.svg",
       "sizes": "any",
       "type": "image/svg+xml",
       "purpose": "any maskable"
