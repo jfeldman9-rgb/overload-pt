@@ -304,6 +304,26 @@ export function typicalCadenceDays(sessionsDesc: Session[]): number | null {
   return Math.max(1, Math.round(gaps[Math.floor(gaps.length / 2)]));
 }
 
+/* ── Today's plan ───────────────────────────────────────────────────── */
+
+/**
+ * The next day in the program rotation after the last one that was run. A
+ * covering therapist should not have to work out where in the block they are.
+ */
+export function suggestedNextDayId(client: ClientRecord): string | null {
+  const days = client.program.days;
+  if (!days.length) return null;
+  const last = completedSessions(client)[0];
+  if (!last?.programDayId) return days[0].id;
+  const index = days.findIndex((d) => d.id === last.programDayId);
+  if (index < 0) return days[0].id;
+  return days[(index + 1) % days.length].id;
+}
+
+export function lastRunForDay(client: ClientRecord, dayId: string): string | null {
+  return completedSessions(client).find((s) => s.programDayId === dayId)?.startedAt ?? null;
+}
+
 /* ── Handoff ────────────────────────────────────────────────────────── */
 
 export function recentChanges(client: ClientRecord, limit = 3): AuditEvent[] {

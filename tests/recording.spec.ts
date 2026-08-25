@@ -137,8 +137,35 @@ test('a dictated note keeps its audio and says when transcription is unavailable
   const note = page.locator('.ledger-item').filter({ hasText: 'Typed because this browser' });
   await expect(note).toContainText('Dictated');
 
-  // Audio is opt-in — the client is never made to listen to the room.
+  // Audio is opt-in even for the therapist who recorded it.
   await expect(note.locator('audio')).toHaveCount(0);
+  await note.getByRole('button', { name: /Play audio/ }).click();
+  await expect(note.locator('audio')).toBeVisible();
+});
+
+test('a client is not served the room audio of a shared note until they ask', async ({ page }) => {
+  await page.goto('/');
+  await page.getByRole('button', { name: 'Trainer' }).click();
+  await page.locator('button.card', { hasText: 'Lower — Rehab Block A' }).first().click();
+  await page.getByRole('button', { name: 'Dictate a session note' }).click();
+
+  // A therapist records real audio and shares the note (not marked clinical).
+  const sheet = page.getByRole('dialog', { name: 'Dictate a session note' });
+  await sheet.getByRole('button', { name: 'Start voice note' }).click();
+  await page.waitForTimeout(1500);
+  await sheet.getByRole('button', { name: 'Stop voice note' }).click();
+  await expect(sheet.getByText('Room audio')).toBeVisible();
+  await sheet.getByLabel('Session note (editable)').fill('Quads firing well through range.');
+  await sheet.getByRole('button', { name: /Save note as Dana R./ }).click();
+
+  await page.getByRole('button', { name: 'Patient' }).click();
+  await nav(page).getByRole('button', { name: 'History' }).click();
+  await page.getByRole('button', { name: 'Notes' }).click();
+
+  const note = page.locator('.ledger-item').filter({ hasText: 'Quads firing well' });
+  await expect(note).toBeVisible();
+  // The cleaned text is readable; the recording of the room is not loaded.
+  await expect(page.locator('audio')).toHaveCount(0);
   await note.getByRole('button', { name: /Play audio/ }).click();
   await expect(note.locator('audio')).toBeVisible();
 });

@@ -139,6 +139,10 @@ test('backup status renders and reports on-device only when no keys are set', as
   const bar = page.locator('.backupbar');
   await expect(bar).toBeVisible();
   await expect(bar).toContainText('On this device');
+  // With no cloud target, a pending count would imply an upload that is never
+  // going to happen. The honest fact is when the device last saved.
+  await expect(bar).not.toContainText('waiting');
+  await expect(bar).not.toContainText('Synced');
 
   await bar.click();
   const sheet = page.getByRole('dialog', { name: 'Backup' });
@@ -158,12 +162,75 @@ test('every change is queued for backup, not just the first', async ({ page }) =
   const goblet = page.locator('.exercise').filter({ hasText: 'Goblet Squat' });
   await goblet.getByRole('button', { name: 'Mark set 1 complete' }).click();
 
-  await expect(bar).toContainText(/change(s)? waiting/);
+  // The line stays accurate: saved locally, at a time.
+  await expect(bar).toContainText(/saved \d/);
 
   await bar.click();
   const sheet = page.getByRole('dialog', { name: 'Backup' });
-  await expect(sheet.locator('.change')).not.toHaveCount(0);
+  const queued = sheet.locator('.change');
+  await expect(queued).not.toHaveCount(0);
   await expect(sheet).toContainText('Completed a set');
+  const before = await queued.count();
+
+  // A second, different kind of change adds to the queue rather than replacing it.
+  await sheet.getByRole('button', { name: 'Done' }).click();
+  await goblet.getByRole('button', { name: 'Increase Set 2 weight' }).click();
+  await page.getByRole('navigation', { name: 'Main navigation' })
+    .getByRole('button', { name: 'Body' }).click();
+  await page.getByRole('button', { name: '+ Log' }).click();
+  await page.getByLabel('Waist', { exact: true }).fill('33.9');
+  await page.getByRole('button', { name: 'Save measurements' }).click();
+
+  await bar.click();
+  await expect(sheet).toContainText('Logged body metrics');
+  expect(await sheet.locator('.change').count()).toBeGreaterThanOrEqual(before);
+});
+
+test('a client can only export their own chart', async ({ page }) => {
+  await page.goto('/');
+  await page.getByRole('button', { name: 'Patient' }).click();
+
+  await page.locator('.backupbar').click();
+  const sheet = page.getByRole('dialog', { name: 'Backup' });
+
+  // Export is scoped and says so; the clinic-wide export is a therapist action.
+  await expect(sheet.getByRole('button', { name: 'Export your chart (JSON)' })).toBeVisible();
+  await expect(sheet.getByRole('button', { name: /Export all charts/ })).toHaveCount(0);
+  await expect(sheet).toContainText('Other patients in the clinic are not included');
+
+  // So is import: restoring a backup would replace every chart on the device.
+  await expect(sheet.getByLabel('Charts (JSON)')).toHaveCount(0);
+  await expect(sheet).toContainText('your therapist does that side');
+
+  // Same scope in Settings, and no clinic-wide reset.
+  await sheet.getByRole('button', { name: 'Done' }).click();
+  await page.getByRole('navigation', { name: 'Main navigation' })
+    .getByRole('button', { name: 'Settings' }).click();
+  await expect(page.getByRole('button', { name: 'Export your chart (JSON)' })).toBeVisible();
+  await expect(page.getByRole('button', { name: /Export all charts/ })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'Reset to demo data' })).toHaveCount(0);
+});
+
+test('the exported client chart carries no other patient', async ({ page }) => {
+  await page.goto('/');
+  await page.getByRole('button', { name: 'Patient' }).click();
+  await page.locator('.backupbar').click();
+
+  const sheet = page.getByRole('dialog', { name: 'Backup' });
+  const download = page.waitForEvent('download');
+  await sheet.getByRole('button', { name: 'Export your chart (JSON)' }).click();
+  const file = await download;
+
+  const stream = await file.createReadStream();
+  const chunks: Buffer[] = [];
+  for await (const chunk of stream) chunks.push(chunk as Buffer);
+  const payload = JSON.parse(Buffer.concat(chunks).toString('utf8')) as {
+    state: { clients: Array<{ name: string }> };
+  };
+
+  expect(payload.state.clients).toHaveLength(1);
+  expect(payload.state.clients[0].name).toBe('Alex M.');
+  expect(JSON.stringify(payload)).not.toContain('Marcus');
 });
 
 /* ── Clinic sharing ─────────────────────────────────────────────────── */
@@ -262,6 +329,59 @@ test('the patient view hides trainer-only notes', async ({ page }) => {
   await expect(page.locator('.pill.danger', { hasText: 'Clinical' })).toHaveCount(0);
   // The patient still sees their own notes and their therapist's shared ones.
   await expect(page.getByText(/Best it has felt since the injury/)).toBeVisible();
+});
+
+test('no tab in the client view leaks another chart or a clinical note', async ({ page }) => {
+  await page.goto('/');
+  await page.getByRole('button', { name: 'Patient' }).click();
+
+  // Anything belonging to the other patient, or to the trainer-only handoff,
+  // must be absent from every screen a client can reach.
+  const forbidden = [
+    'Marcus',
+    'supraspinatus',
+    'return to golf',
+    'graft is 14 weeks out',
+    'Priya',
+  ];
+  const nav = page.getByRole('navigation', { name: 'Main navigation' });
+
+  for (const tab of ['Home', 'Program', 'History', 'Body', 'Settings'] as const) {
+    await nav.getByRole('button', { name: tab }).click();
+    const text = await page.locator('main.content').innerText();
+    for (const needle of forbidden) {
+      expect(text, `"${needle}" reachable on the ${tab} tab in the client view`).not.toContain(
+        needle,
+      );
+    }
+  }
+});
+
+test('a client is never served raw room audio unless they ask for it', async ({ page }) => {
+  await page.goto('/');
+  await page.getByRole('button', { name: 'Patient' }).click();
+  await page.getByRole('navigation', { name: 'Main navigation' })
+    .getByRole('button', { name: 'History' }).click();
+  await page.getByRole('button', { name: 'Notes' }).click();
+
+  // The dictated note the therapist shared is readable as text.
+  const dictated = page.locator('.ledger-item').filter({ hasText: 'Dictated' });
+  await expect(dictated).toHaveCount(1);
+  await expect(dictated).toContainText('Step-downs clean bilaterally');
+
+  // Nothing audio-related is mounted or resolved until the client opts in.
+  await expect(page.locator('audio')).toHaveCount(0);
+  await expect(dictated).not.toContainText('saved without audio');
+  await expect(dictated.getByRole('button', { name: /Play audio/ })).toBeVisible();
+
+  // This seeded note carries no audio file, so opting in says so plainly
+  // rather than presenting a dead player. The real-audio path is covered in
+  // recording.spec.ts.
+  await dictated.getByRole('button', { name: /Play audio/ }).click();
+  await expect(dictated).toContainText('saved without audio');
+
+  // And no clinical note came through with it.
+  await expect(page.locator('.pill.danger', { hasText: 'Clinical' })).toHaveCount(0);
 });
 
 test('the patient view cannot browse other charts', async ({ page }) => {

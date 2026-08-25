@@ -85,7 +85,16 @@ export function NotesLedger({
   );
 }
 
-export function PinnedNote({ note, sessionName }: { note: Note; sessionName: string }) {
+export function PinnedNote({
+  note,
+  sessionName,
+  clamp = false,
+}: {
+  note: Note;
+  sessionName: string;
+  /** Keep a long handoff note from taking the whole screen. */
+  clamp?: boolean;
+}) {
   return (
     <div className="note-pinned">
       <div className="note-meta">
@@ -101,7 +110,7 @@ export function PinnedNote({ note, sessionName }: { note: Note; sessionName: str
       <div className="tiny faint" style={{ marginBottom: 6 }}>
         {sessionName}
       </div>
-      <div className="note-body">{note.body}</div>
+      <div className={`note-body${clamp ? ' clamp' : ''}`}>{note.body}</div>
     </div>
   );
 }

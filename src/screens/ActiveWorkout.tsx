@@ -43,6 +43,7 @@ export function ActiveWorkout({ onNavigate, dockSlot }: ActiveWorkoutProps) {
     activeSession,
     sessions,
     clips,
+    voiceNotes,
     actor,
     exerciseIndex,
     exerciseName,
@@ -87,6 +88,8 @@ export function ActiveWorkout({ onNavigate, dockSlot }: ActiveWorkoutProps) {
 
   const session = activeSession;
   const current = firstIncompleteSet(session.entries);
+
+  const sessionVoiceCount = voiceNotes.filter((v) => v.sessionId === session.id).length;
 
   const totalSets = session.entries.reduce((n, e) => n + e.sets.length, 0);
   const doneSets = session.entries.reduce((n, e) => n + completedSets(e).length, 0);
@@ -161,8 +164,10 @@ export function ActiveWorkout({ onNavigate, dockSlot }: ActiveWorkoutProps) {
             Finish
           </button>
         </div>
+        {/* Full size on purpose: mid-session both hands are busy and this is
+            the control a therapist reaches for while the patient is talking. */}
         <button
-          className="mic-button compact"
+          className="mic-button"
           style={{ marginTop: 12 }}
           onClick={() => {
             setVoiceExerciseId(null);
@@ -173,6 +178,11 @@ export function ActiveWorkout({ onNavigate, dockSlot }: ActiveWorkoutProps) {
             🎙
           </span>
           <span>Dictate a session note</span>
+          {sessionVoiceCount > 0 && (
+            <span className="pill">
+              {sessionVoiceCount} saved
+            </span>
+          )}
         </button>
       </div>
 
