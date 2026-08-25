@@ -1,23 +1,126 @@
 import { createContext, useContext } from 'react';
+import type { SaveOutcome } from '../lib/media';
 import type {
   AppState,
+  AuditEvent,
+  BackupStatus,
+  BodyMetric,
+  ClientRecord,
   Exercise,
+  MovementClip,
   Note,
   Prescription,
+  Program,
   Role,
   Session,
   SetLog,
   Settings,
   Suggestion,
+  Therapist,
+  VoiceNote,
 } from '../types';
 
+/** Who is writing. Every mutation is attributed to one of these. */
+export interface Actor {
+  role: Role;
+  id: string;
+  name: string;
+}
+
+export interface NewBodyMetric {
+  at: string;
+  bodyweight: number | null;
+  bodyFatPct: number | null;
+  waist: number | null;
+  hip: number | null;
+  thigh: number | null;
+  arm: number | null;
+  restingHr: number | null;
+  vo2max: number | null;
+  calipers: BodyMetric['calipers'];
+  dexa: BodyMetric['dexa'];
+  note: string;
+}
+
+export interface NewClip {
+  exerciseId: string;
+  sessionId: string | null;
+  setId: string | null;
+  durationSec: number;
+  mimeType: string;
+  posterUrl: string;
+  label: string;
+  note: string;
+}
+
+export interface NewVoiceNote {
+  sessionId: string | null;
+  exerciseId: string | null;
+  durationSec: number;
+  transcript: string;
+  cleaned: string;
+  mimeType: string;
+  transcriptionSupported: boolean;
+  trainerOnly: boolean;
+}
+
+/** A backup bundle built and held in memory, waiting for a save tap. */
+export interface PreparedBackup {
+  blob: Blob;
+  filename: string;
+  chartCount: number;
+  mediaCount: number;
+  /** Clips or notes whose bytes are no longer on this device. */
+  missingMedia: number;
+  byteSize: number;
+}
+
 export interface AppContextValue {
+  /** Null until IndexedDB has been read. */
+  hydrated: boolean;
   state: AppState;
   exerciseIndex: Map<string, Exercise>;
   allExercises: Exercise[];
+  exerciseName: (id: string) => string;
+
+  /* Clinic */
+  therapists: Therapist[];
+  actingTherapist: Therapist;
+  actor: Actor;
+  /** Charts the signed-in therapist may open (own caseload + shared). */
+  visibleClients: ClientRecord[];
+  /** Charts in the clinic that are not shared with them. */
+  lockedClients: ClientRecord[];
+  client: ClientRecord;
+  /**
+   * Charts the current view may take off the device. Every chart for a
+   * therapist; only their own for a client.
+   */
+  exportableClients: ClientRecord[];
+  /** False when a colleague opened a chart they can read but not own. */
+  isOwningTherapist: boolean;
+  canEdit: boolean;
+  setActingTherapist: (id: string) => void;
+  setActiveClient: (id: string) => void;
+  setShareWithClinic: (clientId: string, shared: boolean, reason?: string) => void;
+  setShareWithTherapist: (
+    clientId: string,
+    therapistId: string,
+    shared: boolean,
+    reason?: string,
+  ) => void;
+
+  /* Active chart, already scoped and permission-filtered */
+  program: Program;
+  sessions: Session[];
+  /** Trainer-only notes are removed in the patient view. */
+  notes: Note[];
+  audit: AuditEvent[];
+  bodyMetrics: BodyMetric[];
+  clips: MovementClip[];
+  voiceNotes: VoiceNote[];
   activeSession: Session | null;
   lastCompletedSession: Session | null;
-  exerciseName: (id: string) => string;
 
   setRole: (role: Role) => void;
   updateSettings: (patch: Partial<Settings>) => void;
@@ -42,7 +145,8 @@ export interface AppContextValue {
     sessionId?: string | null;
     exerciseId?: string | null;
     trainerOnly?: boolean;
-  }) => void;
+    voiceNoteId?: string | null;
+  }) => string;
   deleteNote: (id: string) => void;
 
   updatePrescription: (
@@ -55,9 +159,43 @@ export interface AppContextValue {
   removePrescription: (dayId: string, prescriptionId: string) => void;
   applySuggestion: (dayId: string, suggestion: Suggestion) => void;
 
+  /* Body metrics */
+  addBodyMetric: (input: NewBodyMetric) => void;
+  deleteBodyMetric: (id: string) => void;
+
+  /* Media */
+  addClip: (input: NewClip, blob: Blob) => Promise<void>;
+  deleteClip: (id: string) => Promise<void>;
+  setClipNote: (id: string, note: string) => void;
+  addVoiceNote: (input: NewVoiceNote, blob: Blob | null) => Promise<void>;
+  deleteVoiceNote: (id: string) => Promise<void>;
+
   addCustomExercise: (exercise: Exercise) => void;
   toggleFavorite: (exerciseId: string) => void;
   resetData: () => void;
+
+  /* Backup */
+  backupStatus: BackupStatus;
+  retryBackup: () => Promise<void>;
+  exportChartJson: () => void;
+  /** Builds the single-file bundle. Async, so it cannot also save. */
+  prepareBackup: () => Promise<PreparedBackup>;
+  /** Call straight from a tap: sharing and downloading both need activation. */
+  saveBackup: (prepared: PreparedBackup) => Promise<SaveOutcome>;
+  importBackupFile: (file: File) => Promise<string>;
+  importMediaFiles: (files: FileList) => Promise<number>;
+}
+
+/**
+ * Chart access rule, in one place: the owning therapist, anyone the owner
+ * named, or every therapist in the clinic once the chart is shared clinic-wide.
+ */
+export function canAccessChart(client: ClientRecord, therapistId: string): boolean {
+  return (
+    client.therapistId === therapistId ||
+    client.sharedWithClinic ||
+    client.sharedTherapistIds.includes(therapistId)
+  );
 }
 
 export const AppContext = createContext<AppContextValue | null>(null);

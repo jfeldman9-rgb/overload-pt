@@ -17,6 +17,9 @@ const PROGRESSION_LABELS: Record<ProgressionType, string> = {
 export function ProgramScreen() {
   const {
     state,
+    program,
+    sessions,
+    canEdit,
     exerciseName,
     updatePrescription,
     addPrescription,
@@ -24,33 +27,33 @@ export function ProgramScreen() {
     applySuggestion,
   } = useApp();
 
-  const [dayId, setDayId] = useState(state.program.days[0]?.id ?? '');
+  const [dayId, setDayId] = useState(program.days[0]?.id ?? '');
   const [pickerOpen, setPickerOpen] = useState(false);
   const [editing, setEditing] = useState<Prescription | null>(null);
   const [reason, setReason] = useState('');
 
-  const day = state.program.days.find((d) => d.id === dayId) ?? state.program.days[0];
+  const day = program.days.find((d) => d.id === dayId) ?? program.days[0];
 
   const lastSessionForDay = useMemo(
     () =>
-      [...state.sessions]
+      [...sessions]
         .filter((s) => s.status === 'completed' && s.programDayId === day?.id)
         .sort((a, b) => (a.startedAt < b.startedAt ? 1 : -1))[0] ?? null,
-    [state.sessions, day?.id],
+    [sessions, day?.id],
   );
 
   const suggestions = useMemo(() => {
     if (!day) return new Map<string, ReturnType<typeof suggestProgression>>();
     const map = new Map<string, ReturnType<typeof suggestProgression>>();
     for (const p of day.prescriptions) {
-      map.set(p.id, suggestProgression(p, state.sessions, lastSessionForDay));
+      map.set(p.id, suggestProgression(p, sessions, lastSessionForDay));
     }
     return map;
-  }, [day, state.sessions, lastSessionForDay]);
+  }, [day, sessions, lastSessionForDay]);
 
   if (!day) return <div className="empty">No program days yet.</div>;
 
-  const isTrainer = state.role === 'trainer';
+  const isTrainer = state.role === 'trainer' && canEdit;
 
   const commit = (patch: Partial<Prescription>) => {
     if (!editing) return;
@@ -61,7 +64,7 @@ export function ProgramScreen() {
   return (
     <>
       <div className="picker-filters">
-        {state.program.days.map((d) => (
+        {program.days.map((d) => (
           <button key={d.id} className="chip" aria-pressed={d.id === day.id} onClick={() => setDayId(d.id)}>
             {d.name.split('—')[0].trim()}
           </button>

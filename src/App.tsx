@@ -4,16 +4,20 @@ import { HomeScreen } from './screens/HomeScreen';
 import { ActiveWorkout } from './screens/ActiveWorkout';
 import { ProgramScreen } from './screens/ProgramScreen';
 import { HistoryScreen } from './screens/HistoryScreen';
+import { BodyScreen } from './screens/BodyScreen';
 import { SettingsScreen } from './screens/SettingsScreen';
+import { BackupBar } from './components/BackupBar';
+import { ClientSwitcher } from './components/ClientSwitcher';
 import './styles.css';
 
-export type Tab = 'home' | 'workout' | 'program' | 'history' | 'settings';
+export type Tab = 'home' | 'workout' | 'program' | 'history' | 'body' | 'settings';
 
 const TABS: Array<{ id: Tab; label: string; glyph: string }> = [
   { id: 'home', label: 'Home', glyph: '⌂' },
   { id: 'workout', label: 'Workout', glyph: '▶' },
   { id: 'program', label: 'Program', glyph: '📋' },
   { id: 'history', label: 'History', glyph: '📈' },
+  { id: 'body', label: 'Body', glyph: '⚖' },
   { id: 'settings', label: 'Settings', glyph: '⚙' },
 ];
 
@@ -22,47 +26,50 @@ const TITLES: Record<Tab, string> = {
   workout: 'Workout',
   program: 'Program',
   history: 'History',
+  body: 'Body',
   settings: 'Settings',
 };
 
 function Shell() {
-  const { state, setRole, activeSession } = useApp();
+  const { state, setRole, activeSession, client, actingTherapist } = useApp();
   const [tab, setTab] = useState<Tab>('home');
+  const [rosterOpen, setRosterOpen] = useState(false);
   /** The rest timer portals in here so it stacks above the tab bar, never over it. */
   const [dockSlot, setDockSlot] = useState<HTMLElement | null>(null);
 
+  const isTrainer = state.role === 'trainer';
+
   return (
     <div className="app">
-      <header className="topbar">
-        <div className="grow">
-          <h1>{TITLES[tab]}</h1>
-          <div className="sub">
-            {state.role === 'trainer'
-              ? `${state.trainerName} · viewing ${state.patientName}`
-              : `${state.patientName} · PT ${state.trainerName}`}
+      <div className="topstack">
+        <header className="topbar">
+          <div className="grow">
+            <h1>{TITLES[tab]}</h1>
+            <button className="chartswitch" onClick={() => setRosterOpen(true)}>
+              {isTrainer
+                ? `${actingTherapist.name} · viewing ${client.name}`
+                : `${client.name} · PT ${state.therapists.find((t) => t.id === client.therapistId)?.name ?? '—'}`}
+              <span aria-hidden="true"> ⌄</span>
+            </button>
           </div>
-        </div>
-        <div className="roleswitch" role="group" aria-label="Switch role">
-          <button
-            aria-pressed={state.role === 'patient'}
-            onClick={() => setRole('patient')}
-          >
-            Patient
-          </button>
-          <button
-            aria-pressed={state.role === 'trainer'}
-            onClick={() => setRole('trainer')}
-          >
-            Trainer
-          </button>
-        </div>
-      </header>
+          <div className="roleswitch" role="group" aria-label="Switch role">
+            <button aria-pressed={!isTrainer} onClick={() => setRole('patient')}>
+              Patient
+            </button>
+            <button aria-pressed={isTrainer} onClick={() => setRole('trainer')}>
+              Trainer
+            </button>
+          </div>
+        </header>
+        <BackupBar />
+      </div>
 
       <main className="content">
-        {tab === 'home' && <HomeScreen onNavigate={setTab} />}
+        {tab === 'home' && <HomeScreen onNavigate={setTab} onOpenRoster={() => setRosterOpen(true)} />}
         {tab === 'workout' && <ActiveWorkout onNavigate={setTab} dockSlot={dockSlot} />}
         {tab === 'program' && <ProgramScreen />}
-        {tab === 'history' && <HistoryScreen />}
+        {tab === 'history' && <HistoryScreen onNavigate={setTab} />}
+        {tab === 'body' && <BodyScreen />}
         {tab === 'settings' && <SettingsScreen />}
       </main>
 
@@ -83,6 +90,8 @@ function Shell() {
           ))}
         </nav>
       </div>
+
+      <ClientSwitcher open={rosterOpen} onClose={() => setRosterOpen(false)} />
     </div>
   );
 }

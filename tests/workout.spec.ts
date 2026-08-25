@@ -146,7 +146,10 @@ test('finishing a workout completes the session and clears the in-progress banne
   await page.getByRole('navigation', { name: 'Main navigation' }).getByRole('button', { name: 'Home' }).click();
   await expect(page.getByText('In progress')).toHaveCount(0);
   await expect(page.getByRole('button', { name: 'Resume' })).toHaveCount(0);
-  await expect(page.getByText('Automated test note.')).toBeVisible();
+  // The note lands twice by design: as the last-visit headline and as the
+  // pinned note the next therapist reads first.
+  await expect(page.getByText('Automated test note.').first()).toBeVisible();
+  await expect(page.locator('.note-pinned')).toContainText('Automated test note.');
 });
 
 test('approving a progression suggestion updates the prescription and logs the change', async ({

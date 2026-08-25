@@ -1,5 +1,6 @@
 export type Role = 'patient' | 'trainer';
 export type Units = 'lb' | 'kg';
+export type LengthUnits = 'in' | 'cm';
 
 /** How a movement is measured. Rehab work is often time- or rep-only. */
 export type Metric = 'weight_reps' | 'reps' | 'time' | 'time_weight' | 'distance_time';
@@ -105,11 +106,15 @@ export interface Note {
   sessionId: string | null;
   exerciseId: string | null;
   author: Role;
+  /** Clinic member who wrote it, so a handoff can be traced to a person. */
+  authorId: string;
   authorName: string;
   body: string;
   createdAt: string;
   /** Clinical notes the patient should not see in their own view. */
   trainerOnly: boolean;
+  /** Set when the note came out of a dictated voice note. */
+  voiceNoteId?: string | null;
 }
 
 export type AuditEntity =
@@ -118,12 +123,18 @@ export type AuditEntity =
   | 'session'
   | 'set'
   | 'exercise_swap'
-  | 'settings';
+  | 'settings'
+  | 'body_metric'
+  | 'clip'
+  | 'voice_note'
+  | 'sharing';
 
 export interface AuditEvent {
   id: string;
   at: string;
   actor: Role | 'system';
+  /** Clinic member id — the handoff trail depends on this being real. */
+  actorId: string;
   actorName: string;
   entity: AuditEntity;
   entityLabel: string;
@@ -134,26 +145,173 @@ export interface AuditEvent {
   sessionId: string | null;
 }
 
-export interface Settings {
-  units: Units;
-  autoStartRest: boolean;
-  restAlerts: boolean;
-  clinicalFields: boolean;
+/* ── Clinic roster ──────────────────────────────────────────────────── */
+
+export interface Therapist {
+  id: string;
+  name: string;
+  credential: string;
 }
 
-export interface AppState {
-  version: number;
-  role: Role;
-  patientName: string;
-  trainerName: string;
-  settings: Settings;
+/* ── Body metrics ───────────────────────────────────────────────────── */
+
+/** Jackson–Pollock style skinfold sites, in millimetres. */
+export interface CaliperSites {
+  chest: number | null;
+  abdominal: number | null;
+  thigh: number | null;
+  suprailiac: number | null;
+  triceps: number | null;
+  subscapular: number | null;
+  midaxillary: number | null;
+}
+
+/** DEXA total plus the regional numbers worth trending. */
+export interface DexaScan {
+  totalFatPct: number | null;
+  leanMassLb: number | null;
+  fatMassLb: number | null;
+  visceralFatLb: number | null;
+  trunkFatPct: number | null;
+  armsLeanLb: number | null;
+  legsLeanLb: number | null;
+}
+
+export interface BodyMetric {
+  id: string;
+  clientId: string;
+  /** Date of measurement, not of entry. */
+  at: string;
+  bodyweight: number | null;
+  bodyFatPct: number | null;
+  waist: number | null;
+  hip: number | null;
+  thigh: number | null;
+  arm: number | null;
+  restingHr: number | null;
+  vo2max: number | null;
+  calipers: CaliperSites;
+  dexa: DexaScan | null;
+  note: string;
+  units: Units;
+  lengthUnits: LengthUnits;
+  loggedBy: Role;
+  loggedById: string;
+  loggedByName: string;
+}
+
+export type BodyMetricField =
+  | 'bodyweight'
+  | 'bodyFatPct'
+  | 'waist'
+  | 'hip'
+  | 'thigh'
+  | 'arm'
+  | 'restingHr'
+  | 'vo2max';
+
+/* ── Media ──────────────────────────────────────────────────────────── */
+
+/** Where a piece of data currently lives. Never claim more than is true. */
+export type BackupState = 'local' | 'queued' | 'synced';
+
+export interface MovementClip {
+  id: string;
+  clientId: string;
+  exerciseId: string;
+  sessionId: string | null;
+  /**
+   * The set this clip was filmed on, when it was filmed from the set row.
+   * Null for clips attached to the exercise as a whole, including anything
+   * recorded before per-set filming existed.
+   */
+  setId?: string | null;
+  recordedAt: string;
+  durationSec: number;
+  mimeType: string;
+  byteSize: number;
+  /** IndexedDB blob key. Null for the seeded demo placeholders. */
+  blobKey: string | null;
+  /** Tiny data-URL still so the list is scannable without autoplaying. */
+  posterUrl: string;
+  label: string;
+  note: string;
+  recordedBy: Role;
+  recordedById: string;
+  recordedByName: string;
+  /** Demo row with no video data behind it. */
+  placeholder?: boolean;
+  backup: BackupState;
+}
+
+export interface VoiceNote {
+  id: string;
+  clientId: string;
+  sessionId: string | null;
+  exerciseId: string | null;
+  at: string;
+  durationSec: number;
+  /** Raw output of the browser recognizer, kept verbatim for the chart. */
+  transcript: string;
+  /** Edited text that becomes the shared note body. */
+  cleaned: string;
+  blobKey: string | null;
+  mimeType: string;
+  transcriptionSupported: boolean;
+  authorRole: Role;
+  authorId: string;
+  authorName: string;
+  trainerOnly: boolean;
+  noteId: string | null;
+  backup: BackupState;
+}
+
+/* ── Client chart ───────────────────────────────────────────────────── */
+
+export interface ClientRecord {
+  id: string;
+  name: string;
+  condition: string;
+  /** Owning therapist. Their caseload. */
+  therapistId: string;
+  /** Colleagues explicitly granted access to the chart. */
+  sharedTherapistIds: string[];
+  /** Open to every therapist in the clinic (covering shifts, handoffs). */
+  sharedWithClinic: boolean;
   program: Program;
   sessions: Session[];
   notes: Note[];
   audit: AuditEvent[];
-  customExercises: Exercise[];
+  bodyMetrics: BodyMetric[];
+  clips: MovementClip[];
+  voiceNotes: VoiceNote[];
   favorites: string[];
   recentExercises: string[];
+}
+
+export interface Settings {
+  units: Units;
+  lengthUnits: LengthUnits;
+  autoStartRest: boolean;
+  restAlerts: boolean;
+  clinicalFields: boolean;
+  /** Hard cap on movement clip length. Short clips stay reviewable. */
+  clipMaxSec: number;
+}
+
+export interface AppState {
+  version: number;
+  clinicName: string;
+  therapists: Therapist[];
+  clients: ClientRecord[];
+  /** Patient or trainer view. The switch Jason already uses. */
+  role: Role;
+  /** Signed-in therapist. Every trainer-side write is attributed to them. */
+  actingTherapistId: string;
+  /** Chart currently open. */
+  activeClientId: string;
+  settings: Settings;
+  customExercises: Exercise[];
 }
 
 /** A progression suggestion awaiting trainer approval. */
@@ -166,4 +324,31 @@ export interface Suggestion {
   from: number;
   to: number;
   rationale: string;
+}
+
+/* ── Backup ─────────────────────────────────────────────────────────── */
+
+export type OutboxKind = 'chart' | 'clip' | 'voice';
+
+export interface OutboxItem {
+  id: string;
+  at: string;
+  kind: OutboxKind;
+  summary: string;
+  clientId: string | null;
+  blobKey: string | null;
+  attempts: number;
+  lastError: string | null;
+}
+
+export type SyncPhase = 'unconfigured' | 'idle' | 'syncing' | 'error';
+
+export interface BackupStatus {
+  /** True only when both Supabase env vars are present. */
+  configured: boolean;
+  phase: SyncPhase;
+  pending: number;
+  lastLocalWriteAt: string | null;
+  lastSyncedAt: string | null;
+  lastError: string | null;
 }

@@ -1,4 +1,5 @@
-import type { Exercise, ExerciseEntry, SetLog, Settings } from '../types';
+import { Fragment } from 'react';
+import type { Exercise, ExerciseEntry, MovementClip, SetLog, Settings } from '../types';
 import { mmss } from '../lib/format';
 import { NumberField } from './NumberField';
 
@@ -10,6 +11,12 @@ interface SetGridProps {
   onUpdateSet: (setId: string, patch: Partial<SetLog>) => void;
   onToggleSet: (setId: string) => void;
   onRemoveSet: (setId: string) => void;
+  /** Clips already filmed on a given set. */
+  clipsForSet?: (setId: string) => MovementClip[];
+  /** Film this set. Optional: the grid works without a camera. */
+  onFilmSet?: (set: SetLog) => void;
+  /** Open the clips already on this set, for comparing against other dates. */
+  onOpenSetClips?: (set: SetLog) => void;
 }
 
 function loadLabel(metric: Exercise['metric'], units: string): string {
@@ -41,6 +48,9 @@ export function SetGrid({
   onUpdateSet,
   onToggleSet,
   onRemoveSet,
+  clipsForSet,
+  onFilmSet,
+  onOpenSetClips,
 }: SetGridProps) {
   const metric = exercise?.metric ?? 'weight_reps';
   const weightStep = settings.units === 'kg' ? 2.5 : 5;
@@ -58,9 +68,17 @@ export function SetGrid({
       {entry.sets.map((set) => {
         const rest = restDelta(set);
         const isCurrent = set.id === currentSetId;
+        const setClips = clipsForSet?.(set.id) ?? [];
+        /*
+         * The five columns are load-bearing and already tight (an 84px stepper
+         * field at 390px), so the camera hangs off the row rather than becoming
+         * a sixth column. It shows on the set being worked and on any set that
+         * already has film — never on all five at once.
+         */
+        const showFilmStrip = Boolean(onFilmSet) && (isCurrent || setClips.length > 0);
         return (
+          <Fragment key={set.id}>
           <div
-            key={set.id}
             className={`setrow${set.completed ? ' done' : ''}${isCurrent ? ' current' : ''}`}
           >
             <div
@@ -101,6 +119,45 @@ export function SetGrid({
               </button>
             </div>
           </div>
+
+          {showFilmStrip && (
+            <div className="setclip">
+              {setClips.length > 0 ? (
+                <>
+                  {setClips.slice(0, 3).map((clip) => (
+                    <button
+                      key={clip.id}
+                      className="setclip-thumb"
+                      onClick={() => onOpenSetClips?.(set)}
+                      aria-label={`Open the clip filmed on set ${set.setNumber}`}
+                    >
+                      {clip.posterUrl ? <img src={clip.posterUrl} alt="" /> : <span>▶</span>}
+                    </button>
+                  ))}
+                  <span className="grow tiny">
+                    {setClips.length} clip{setClips.length === 1 ? '' : 's'} on set {set.setNumber}
+                  </span>
+                  <button
+                    className="btn sm ghost"
+                    onClick={() => onFilmSet?.(set)}
+                    aria-label={`Film set ${set.setNumber} again`}
+                  >
+                    + Film
+                  </button>
+                </>
+              ) : (
+                <button
+                  className="setclip-film"
+                  onClick={() => onFilmSet?.(set)}
+                  aria-label={`Film set ${set.setNumber}`}
+                >
+                  <span aria-hidden="true">🎥</span> Film set {set.setNumber}
+                  <span className="faint"> · optional</span>
+                </button>
+              )}
+            </div>
+          )}
+          </Fragment>
         );
       })}
 

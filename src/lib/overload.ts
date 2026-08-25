@@ -69,10 +69,15 @@ export function lastPerformance(
 
 export interface ExercisePoint {
   date: string;
+  sessionId: string;
   volume: number;
   topWeight: number;
   e1rm: number;
   totalReps: number;
+  /** Mean rest actually taken, so cutting rest reads as overload too. */
+  avgRestSec: number | null;
+  prescribedRestSec: number;
+  maxPain: number | null;
 }
 
 export function exerciseHistory(sessions: Session[], exerciseId: string): ExercisePoint[] {
@@ -86,10 +91,14 @@ export function exerciseHistory(sessions: Session[], exerciseId: string): Exerci
       return [
         {
           date: s.startedAt,
+          sessionId: s.id,
           volume: entryVolume(entry),
           topWeight: top?.weight ?? 0,
           e1rm: entryE1RM(entry),
           totalReps: completedSets(entry).reduce((sum, x) => sum + x.reps, 0),
+          avgRestSec: averageRest(entry),
+          prescribedRestSec: entry.restSec,
+          maxPain: entryMaxPain(entry),
         },
       ];
     });
@@ -103,7 +112,7 @@ function hitAllTargets(entry: ExerciseEntry, prescription: Prescription): boolea
   return done.every((s) => s.reps >= goal && s.weight >= prescription.targetWeight);
 }
 
-function maxPain(entry: ExerciseEntry): number | null {
+export function entryMaxPain(entry: ExerciseEntry): number | null {
   const values = entry.sets
     .map((s) => s.pain)
     .filter((v): v is number => typeof v === 'number');
@@ -137,7 +146,7 @@ export function suggestProgression(
   const entry = findEntry(lastSession, prescription.exerciseId);
   if (!entry || !completedSets(entry).length) return null;
 
-  const pain = maxPain(entry);
+  const pain = entryMaxPain(entry);
   if (rule.gatePainMax != null && pain != null && pain > rule.gatePainMax) {
     return {
       id: uid('sug'),

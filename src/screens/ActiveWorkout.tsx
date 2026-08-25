@@ -6,10 +6,26 @@ import { SetGrid } from '../components/SetGrid';
 import { RestTimerDock } from '../components/RestTimerDock';
 import { ExercisePicker } from '../components/ExercisePicker';
 import { Sheet } from '../components/Sheet';
+import { MovementSheet } from '../components/MovementSheet';
+import { VoiceNoteSheet } from '../components/VoiceNoteSheet';
 import { durationBetween, mmss, shortDate, weight } from '../lib/format';
 import { averageRest, completedSets, entryVolume, lastPerformance } from '../lib/overload';
+import { clipsForExercise, clipsForSet } from '../lib/review';
 import type { Tab } from '../App';
-import type { ExerciseEntry } from '../types';
+import type { ExerciseEntry, SetLog } from '../types';
+
+/** Label a clip with the exact set it belongs to, so the list reads by itself. */
+function setLabel(set: SetLog, units: string): string {
+  return `Set ${set.setNumber} — ${set.weight ? `${set.weight} ${units} × ` : ''}${set.reps}`;
+}
+
+/** Fallback for a clip attached to the exercise rather than one set. */
+function clipLabelFor(entry: ExerciseEntry, units: string): string {
+  const done = completedSets(entry);
+  const last = done[done.length - 1] ?? entry.sets[0];
+  if (!last) return 'Movement clip';
+  return setLabel(last, units);
+}
 
 /** The set the athlete is on: first unlogged set, scanning exercises in order. */
 function firstIncompleteSet(entries: ExerciseEntry[]) {
@@ -30,6 +46,10 @@ export function ActiveWorkout({ onNavigate, dockSlot }: ActiveWorkoutProps) {
   const {
     state,
     activeSession,
+    sessions,
+    clips,
+    voiceNotes,
+    actor,
     exerciseIndex,
     exerciseName,
     updateSet,
@@ -51,6 +71,13 @@ export function ActiveWorkout({ onNavigate, dockSlot }: ActiveWorkoutProps) {
   const [noteTarget, setNoteTarget] = useState<ExerciseEntry | null>(null);
   const [finishOpen, setFinishOpen] = useState(false);
   const [sessionNote, setSessionNote] = useState('');
+  const [videoTarget, setVideoTarget] = useState<ExerciseEntry | null>(null);
+  /** Filming a specific set: which set, and whether to open the camera. */
+  const [filmTarget, setFilmTarget] = useState<
+    { entry: ExerciseEntry; set: SetLog; record: boolean } | null
+  >(null);
+  const [voiceOpen, setVoiceOpen] = useState(false);
+  const [voiceExerciseId, setVoiceExerciseId] = useState<string | null>(null);
 
   /** Set that the currently running rest belongs to, so rest lands on the right row. */
   const pendingRestSetId = useRef<{ entryId: string; setId: string } | null>(null);
@@ -70,6 +97,8 @@ export function ActiveWorkout({ onNavigate, dockSlot }: ActiveWorkoutProps) {
 
   const session = activeSession;
   const current = firstIncompleteSet(session.entries);
+
+  const sessionVoiceCount = voiceNotes.filter((v) => v.sessionId === session.id).length;
 
   const totalSets = session.entries.reduce((n, e) => n + e.sets.length, 0);
   const doneSets = session.entries.reduce((n, e) => n + completedSets(e).length, 0);
@@ -144,13 +173,34 @@ export function ActiveWorkout({ onNavigate, dockSlot }: ActiveWorkoutProps) {
             Finish
           </button>
         </div>
+        {/* Full size on purpose: mid-session both hands are busy and this is
+            the control a therapist reaches for while the patient is talking. */}
+        <button
+          className="mic-button"
+          style={{ marginTop: 12 }}
+          onClick={() => {
+            setVoiceExerciseId(null);
+            setVoiceOpen(true);
+          }}
+        >
+          <span className="mic-glyph" aria-hidden="true">
+            🎙
+          </span>
+          <span>Dictate a session note</span>
+          {sessionVoiceCount > 0 && (
+            <span className="pill">
+              {sessionVoiceCount} saved
+            </span>
+          )}
+        </button>
       </div>
 
       {session.entries.map((entry) => {
         const exercise = exerciseIndex.get(entry.exerciseId);
-        const prior = lastPerformance(state.sessions, entry.exerciseId, session.id);
+        const prior = lastPerformance(sessions, entry.exerciseId, session.id);
         const isActive = current?.entry.id === entry.id;
         const avg = averageRest(entry);
+        const clipCount = clipsForExercise(clips, entry.exerciseId).length;
 
         return (
           <div key={entry.id} className={`exercise${isActive ? ' active' : ''}`}>
@@ -178,6 +228,9 @@ export function ActiveWorkout({ onNavigate, dockSlot }: ActiveWorkoutProps) {
                 onUpdateSet={(setId, patch) => updateSet(entry.id, setId, patch)}
                 onToggleSet={(setId) => handleToggleSet(entry, setId)}
                 onRemoveSet={(setId) => removeSet(entry.id, setId)}
+                clipsForSet={(setId) => clipsForSet(clips, setId)}
+                onFilmSet={(set) => setFilmTarget({ entry, set, record: true })}
+                onOpenSetClips={(set) => setFilmTarget({ entry, set, record: false })}
               />
 
               {prior && (
@@ -201,8 +254,25 @@ export function ActiveWorkout({ onNavigate, dockSlot }: ActiveWorkoutProps) {
                 <button className="btn sm" onClick={() => addSet(entry.id)}>
                   + Set
                 </button>
+                <button
+                  className="btn sm"
+                  onClick={() => setVideoTarget(entry)}
+                  aria-label={`Movement video for ${exercise?.name ?? entry.exerciseId}`}
+                >
+                  🎥 Video{clipCount ? ` (${clipCount})` : ''}
+                </button>
                 <button className="btn sm" onClick={() => setNoteTarget(entry)}>
                   {entry.note ? '📝 Note ✓' : '📝 Note'}
+                </button>
+                <button
+                  className="btn sm"
+                  onClick={() => {
+                    setVoiceExerciseId(entry.exerciseId);
+                    setVoiceOpen(true);
+                  }}
+                  aria-label={`Dictate a note for ${exercise?.name ?? entry.exerciseId}`}
+                >
+                  🎙 Dictate
                 </button>
                 <button className="btn sm" onClick={() => setSwapTarget(entry.id)}>
                   ⇄ Swap
@@ -284,6 +354,38 @@ export function ActiveWorkout({ onNavigate, dockSlot }: ActiveWorkoutProps) {
         </div>
       </Sheet>
 
+      {videoTarget && (
+        <MovementSheet
+          open
+          onClose={() => setVideoTarget(null)}
+          exerciseId={videoTarget.exerciseId}
+          sessionId={session.id}
+          defaultLabel={clipLabelFor(videoTarget, state.settings.units)}
+        />
+      )}
+
+      {filmTarget && (
+        <MovementSheet
+          open
+          onClose={() => setFilmTarget(null)}
+          exerciseId={filmTarget.entry.exerciseId}
+          sessionId={session.id}
+          setId={filmTarget.set.id}
+          defaultLabel={setLabel(filmTarget.set, state.settings.units)}
+          initialMode={filmTarget.record ? 'record' : 'compare'}
+        />
+      )}
+
+      <VoiceNoteSheet
+        open={voiceOpen}
+        onClose={() => setVoiceOpen(false)}
+        sessionId={session.id}
+        exerciseId={voiceExerciseId}
+        title={
+          voiceExerciseId ? `Dictate — ${exerciseName(voiceExerciseId)}` : 'Dictate a session note'
+        }
+      />
+
       <Sheet open={finishOpen} title="Finish workout" onClose={() => setFinishOpen(false)}>
         <div className="stats" style={{ marginBottom: 14 }}>
           <div className="stat">
@@ -304,7 +406,7 @@ export function ActiveWorkout({ onNavigate, dockSlot }: ActiveWorkoutProps) {
 
         <div className="field">
           <label htmlFor="finish-note">
-            Session note ({state.role === 'trainer' ? state.trainerName : state.patientName})
+            Session note ({actor.name})
           </label>
           <textarea
             id="finish-note"
