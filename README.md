@@ -1,5 +1,9 @@
 # Overload PT
 
+**Live preview: [jfeldman9-rgb.github.io/overload-pt](https://jfeldman9-rgb.github.io/overload-pt/)**
+— open it on a phone. It seeds a demo clinic, so there is something to look at
+immediately, and Settings → Reset puts it back.
+
 A mobile-first progressive overload tracker for a physical therapy clinic. It combines Hevy's
 set-logging grid with Clank's prescribed rest timer, and adds the things neither app has for
 clinical use: a **running notes ledger**, an **explicit change log** of every prescription
@@ -155,6 +159,24 @@ To re-record the product walkthrough video:
 ```bash
 npx playwright test --config playwright.demo.config.ts   # writes demo-output/**/video.webm
 ```
+
+## Publishing the preview
+
+The live preview is the `gh-pages` branch, served from the repository root at
+`/overload-pt/`, which is why `vite.config.ts` sets `base: '/overload-pt/'`.
+
+```bash
+npm run build
+git worktree add /tmp/ghp gh-pages
+cd /tmp/ghp && git rm -rq . && cp -R /path/to/dist/. .
+touch .nojekyll          # stop Pages from processing assets/
+cp index.html 404.html   # a refresh on any path lands on the app
+git add -A && git commit -m "Publish preview" && git push origin gh-pages
+```
+
+`.nojekyll` and the `404.html` copy are both required: without the first, Pages
+ignores paths Jekyll considers private, and without the second a refresh or a
+deep link gets a Pages error page instead of the app.
 
 ## Trying the demo data
 
