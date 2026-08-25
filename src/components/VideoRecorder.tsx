@@ -99,6 +99,25 @@ export function VideoRecorder({
     [stopStream],
   );
 
+  /**
+   * Attach the stream once the <video> is actually in the DOM.
+   *
+   * `openCamera` runs while the phase is still `idle`, and the preview element
+   * only mounts for `live` and `recording` — so assigning `srcObject` there
+   * silently did nothing (the ref was null) and the user got the frame's black
+   * background after granting permission. Recording still worked because it
+   * reads the stream from the ref, which is why this survived several passes:
+   * nothing asserted that the preview was showing anything.
+   */
+  useEffect(() => {
+    const video = previewRef.current;
+    const stream = streamRef.current;
+    if (!video || !stream) return;
+    if (video.srcObject !== stream) video.srcObject = stream;
+    // iOS additionally needs muted + playsInline, which are set on the element.
+    void video.play().catch(() => undefined);
+  }, [phase]);
+
   useEffect(() => {
     if (phase !== 'recording') return;
     const id = window.setInterval(() => {
@@ -121,10 +140,7 @@ export function VideoRecorder({
     try {
       const stream = await requestCameraStream();
       streamRef.current = stream;
-      if (previewRef.current) {
-        previewRef.current.srcObject = stream;
-        await previewRef.current.play().catch(() => undefined);
-      }
+      // The effect above attaches it once the element exists.
       setPhase('live');
     } catch (e) {
       setPhase('error');

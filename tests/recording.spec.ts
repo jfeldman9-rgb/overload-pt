@@ -247,3 +247,133 @@ test('a browser that refuses simultaneous playback says so', async ({ page }) =>
   await expect(sheet).not.toContainText('use the controls on each clip');
 });
 
+
+/**
+ * Reads the live state of the recorder's preview element. The bug this guards
+ * against was invisible to every other test: recording reads the stream from a
+ * ref, so clips saved correctly while the preview showed nothing at all.
+ */
+async function previewState(page: Page) {
+  return page.evaluate(() => {
+    const video = document.querySelector('.recorder-frame video') as HTMLVideoElement | null;
+    if (!video) return { present: false } as const;
+    const stream = video.srcObject as MediaStream | null;
+    let frame = { min: -1, max: -1 };
+    if (video.videoWidth > 0) {
+      const canvas = document.createElement('canvas');
+      canvas.width = 32;
+      canvas.height = 32;
+      const ctx = canvas.getContext('2d')!;
+      ctx.drawImage(video, 0, 0, 32, 32);
+      const data = ctx.getImageData(0, 0, 32, 32).data;
+      let min = 255;
+      let max = 0;
+      for (let i = 0; i < data.length; i += 4) {
+        const lum = (data[i] + data[i + 1] + data[i + 2]) / 3;
+        min = Math.min(min, lum);
+        max = Math.max(max, lum);
+      }
+      frame = { min: Math.round(min), max: Math.round(max) };
+    }
+    return {
+      present: true,
+      hasStream: Boolean(stream),
+      liveVideoTracks: stream ? stream.getVideoTracks().filter((t) => t.readyState === 'live').length : 0,
+      videoWidth: video.videoWidth,
+      readyState: video.readyState,
+      paused: video.paused,
+      frame,
+    } as const;
+  });
+}
+
+test('granting the camera shows the camera, not a black frame', async ({ page }) => {
+  await page.goto('/');
+  await page.getByRole('button', { name: 'Trainer' }).click();
+  await page.locator('button.card', { hasText: 'Lower — Rehab Block A' }).first().click();
+
+  const goblet = page.locator('.exercise').filter({ hasText: 'Goblet Squat' });
+  await goblet.getByRole('button', { name: /Movement video for Goblet Squat/ }).click();
+  const sheet = page.getByRole('dialog', { name: /Movement — Goblet Squat/ });
+  await sheet.getByRole('button', { name: '⏺ Record', exact: true }).click();
+  await sheet.getByRole('button', { name: /Open camera/ }).click();
+
+  // Permission is granted at this point, so the preview has to be showing.
+  await expect(sheet.getByRole('button', { name: /^⏺ Record \(\d+s max\)$/ })).toBeVisible();
+  await expect
+    .poll(async () => (await previewState(page)).readyState ?? -1, { timeout: 10_000 })
+    .toBeGreaterThanOrEqual(2);
+
+  const live = await previewState(page);
+  expect(live.present).toBe(true);
+  // The stream must reach the element that is actually in the document.
+  expect(live.hasStream, 'the camera stream is attached to the preview').toBe(true);
+  expect(live.liveVideoTracks).toBe(1);
+  expect(live.videoWidth, 'the preview has real video dimensions').toBeGreaterThan(0);
+  expect(live.paused, 'the preview is playing').toBe(false);
+  // And it is painting something, not a uniform fill.
+  expect(live.frame.max, 'the preview frame is not flat black').toBeGreaterThan(8);
+
+  // The same element carries through into recording without being detached.
+  await sheet.getByRole('button', { name: /^⏺ Record \(\d+s max\)$/ }).click();
+  const recording = await previewState(page);
+  expect(recording.hasStream).toBe(true);
+  expect(recording.paused).toBe(false);
+  expect(recording.videoWidth).toBeGreaterThan(0);
+
+  await page.waitForTimeout(1500);
+  await sheet.getByRole('button', { name: /Stop and review/ }).click();
+  await sheet.getByRole('button', { name: /Save clip to this exercise/ }).click();
+  await expect(sheet.locator('.clipcard')).toHaveCount(3);
+
+  // The poster is grabbed from that preview, so a dead preview meant a black
+  // thumbnail in every clip list.
+  const poster = await page.evaluate(async () => {
+    const img = document.querySelector('.clipcard .clipthumb img') as HTMLImageElement | null;
+    if (!img) return { found: false, max: -1 };
+    await img.decode().catch(() => undefined);
+    const canvas = document.createElement('canvas');
+    canvas.width = 32;
+    canvas.height = 32;
+    const ctx = canvas.getContext('2d')!;
+    ctx.drawImage(img, 0, 0, 32, 32);
+    const data = ctx.getImageData(0, 0, 32, 32).data;
+    let max = 0;
+    for (let i = 0; i < data.length; i += 4) {
+      max = Math.max(max, (data[i] + data[i + 1] + data[i + 2]) / 3);
+    }
+    return { found: true, max: Math.round(max) };
+  });
+  expect(poster.found).toBe(true);
+  expect(poster.max, 'the saved poster is a real frame, not a black fill').toBeGreaterThan(8);
+});
+
+test('retaking a clip brings the preview back', async ({ page }) => {
+  await page.goto('/');
+  await page.getByRole('button', { name: 'Trainer' }).click();
+  await nav(page).getByRole('button', { name: 'History' }).click();
+  await page.getByRole('button', { name: 'Lifts' }).click();
+  await page
+    .locator('.card')
+    .filter({ hasText: 'Goblet Squat' })
+    .first()
+    .getByRole('button', { name: /Movement video/ })
+    .click();
+
+  const sheet = page.getByRole('dialog', { name: /Movement — Goblet Squat/ });
+  await sheet.getByRole('button', { name: '⏺ Record', exact: true }).click();
+  await sheet.getByRole('button', { name: /Open camera/ }).click();
+  await sheet.getByRole('button', { name: /^⏺ Record \(\d+s max\)$/ }).click();
+  await page.waitForTimeout(1200);
+  await sheet.getByRole('button', { name: /Stop and review/ }).click();
+
+  // Retake tears the preview down and reopens the camera on its own.
+  await sheet.getByRole('button', { name: 'Retake' }).click();
+  await expect
+    .poll(async () => (await previewState(page)).readyState ?? -1, { timeout: 10_000 })
+    .toBeGreaterThanOrEqual(2);
+  const again = await previewState(page);
+  expect(again.hasStream).toBe(true);
+  expect(again.paused).toBe(false);
+  expect(again.frame.max).toBeGreaterThan(8);
+});
