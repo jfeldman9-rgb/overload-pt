@@ -11,9 +11,9 @@
  */
 
 import type { AppState, BackupStatus, OutboxItem, OutboxKind, SyncPhase } from '../types';
-import { getBlob, readDoc, readOutbox, writeDoc, writeOutbox } from './idb';
+import { getBlob, readDoc, readOutbox, storageKind, writeDoc, writeOutbox } from './idb';
 import { isConfigured, pushBodyMetrics, pushChart, pushMedia } from './supabase';
-import { uid } from './format';
+import { clockTime, uid } from './format';
 
 export const STATE_DOC = 'chart-state';
 const META_DOC = 'backup-meta';
@@ -223,10 +223,10 @@ class BackupEngine {
 
 export const backup = new BackupEngine();
 
-/** Human label for the three states Jason asked to see. */
+/** The three states, plus the two that only appear once a cloud is configured. */
 export function backupLabel(status: BackupStatus): string {
   if (!status.configured) {
-    return status.pending > 0 ? 'On this device' : 'On this device';
+    return storageKind() === 'indexeddb' ? 'On this device' : 'On this device — fallback storage';
   }
   if (status.phase === 'syncing') return 'Backing up…';
   if (status.phase === 'error') return 'Cloud backup failed';
@@ -234,8 +234,23 @@ export function backupLabel(status: BackupStatus): string {
   return 'Synced';
 }
 
+/**
+ * The second half of the status line. With no cloud target, a pending count
+ * would imply an upload that is never going to happen, so the honest fact to
+ * report is when the device last saved.
+ */
+export function backupDetail(status: BackupStatus): string {
+  const plural = (n: number) => `${n} change${n === 1 ? '' : 's'}`;
+  if (!status.configured) {
+    return status.lastLocalWriteAt ? `saved ${clockTime(status.lastLocalWriteAt)}` : 'nothing logged yet';
+  }
+  if (status.phase === 'error') return status.pending ? `${plural(status.pending)} still here` : 'retry from Details';
+  if (status.pending > 0) return `${plural(status.pending)} waiting`;
+  return status.lastSyncedAt ? `synced ${clockTime(status.lastSyncedAt)}` : 'nothing to send';
+}
+
 export function backupTone(status: BackupStatus): 'accent' | 'warn' | 'danger' | 'plain' {
-  if (!status.configured) return 'plain';
+  if (!status.configured) return storageKind() === 'indexeddb' ? 'plain' : 'warn';
   if (status.phase === 'error') return 'danger';
   if (status.pending > 0 || status.phase === 'syncing') return 'warn';
   return 'accent';
