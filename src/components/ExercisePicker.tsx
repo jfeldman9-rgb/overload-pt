@@ -20,7 +20,7 @@ interface ExercisePickerProps {
 const TIERS: Array<Tier | 'all'> = ['all', 'rehab', 'strength', 'mobility', 'conditioning'];
 
 export function ExercisePicker({ open, title = 'Add exercise', onClose, onPick }: ExercisePickerProps) {
-  const { allExercises, state, toggleFavorite, addCustomExercise } = useApp();
+  const { allExercises, client, toggleFavorite, addCustomExercise } = useApp();
   const [query, setQuery] = useState('');
   const [tier, setTier] = useState<Tier | 'all'>('all');
   const [primary, setPrimary] = useState('all');
@@ -34,16 +34,16 @@ export function ExercisePicker({ open, title = 'Add exercise', onClose, onPick }
   );
 
   const favorites = useMemo(
-    () => allExercises.filter((e) => state.favorites.includes(e.id)),
-    [allExercises, state.favorites],
+    () => allExercises.filter((e) => client.favorites.includes(e.id)),
+    [allExercises, client.favorites],
   );
 
   const recents = useMemo(
     () =>
-      state.recentExercises
+      client.recentExercises
         .map((id) => allExercises.find((e) => e.id === id))
         .filter((e): e is Exercise => Boolean(e)),
-    [allExercises, state.recentExercises],
+    [allExercises, client.recentExercises],
   );
 
   const showShortcuts = !query && tier === 'all' && primary === 'all' && equipment === 'all';
@@ -124,14 +124,14 @@ export function ExercisePicker({ open, title = 'Add exercise', onClose, onPick }
           <div className="section-label" style={{ marginTop: 4 }}>
             Favorites
           </div>
-          <ExerciseList items={favorites} onPick={pick} onStar={toggleFavorite} favorites={state.favorites} />
+          <ExerciseList items={favorites} onPick={pick} onStar={toggleFavorite} favorites={client.favorites} />
         </>
       )}
 
       {showShortcuts && recents.length > 0 && (
         <>
           <div className="section-label">Recent</div>
-          <ExerciseList items={recents} onPick={pick} onStar={toggleFavorite} favorites={state.favorites} />
+          <ExerciseList items={recents} onPick={pick} onStar={toggleFavorite} favorites={client.favorites} />
         </>
       )}
 
@@ -153,7 +153,7 @@ export function ExercisePicker({ open, title = 'Add exercise', onClose, onPick }
           items={results.slice(0, 300)}
           onPick={pick}
           onStar={toggleFavorite}
-          favorites={state.favorites}
+          favorites={client.favorites}
         />
       )}
 
