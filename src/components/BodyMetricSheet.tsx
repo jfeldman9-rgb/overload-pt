@@ -99,6 +99,17 @@ function emptyDexa(): DexaScan {
   };
 }
 
+/**
+ * A date input can be cleared, and `new Date('T08:00:00')` throws on
+ * toISOString. Save used to swallow that and do nothing at all, losing the
+ * measurements silently.
+ */
+function measuredAtIso(date: string): string | null {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return null;
+  const parsed = new Date(`${date}T08:00:00`);
+  return Number.isNaN(parsed.getTime()) ? null : parsed.toISOString();
+}
+
 function todayLocal(): string {
   const d = new Date();
   const offset = d.getTimezoneOffset() * 60_000;
@@ -161,9 +172,10 @@ export function BodyMetricSheet({ open, onClose }: { open: boolean; onClose: () 
   };
 
   const save = () => {
-    if (!anyValue) return;
+    const at = measuredAtIso(date);
+    if (!anyValue || !at) return;
     addBodyMetric({
-      at: new Date(`${date}T08:00:00`).toISOString(),
+      at,
       bodyweight,
       bodyFatPct,
       waist,
@@ -194,6 +206,11 @@ export function BodyMetricSheet({ open, onClose }: { open: boolean; onClose: () 
             max={todayLocal()}
             onChange={(e) => setDate(e.target.value)}
           />
+          {!measuredAtIso(date) && (
+            <span className="tiny" style={{ color: 'var(--warn)' }}>
+              Pick a date before saving.
+            </span>
+          )}
         </div>
         {previous && (
           <button className="btn sm" style={{ alignSelf: 'flex-end' }} onClick={copyLast}>
@@ -368,7 +385,11 @@ export function BodyMetricSheet({ open, onClose }: { open: boolean; onClose: () 
         Logging as {actor.name}. Blank fields are skipped, so a single number is a valid entry.
       </div>
 
-      <button className="btn primary block" onClick={save} disabled={!anyValue}>
+      <button
+        className="btn primary block"
+        onClick={save}
+        disabled={!anyValue || !measuredAtIso(date)}
+      >
         Save measurements
       </button>
       {saved && (

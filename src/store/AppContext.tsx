@@ -130,6 +130,30 @@ interface LoadedState {
   persisted: boolean;
 }
 
+/**
+ * A backup arrives from outside the app, so it gets checked before it becomes
+ * state. `Array.isArray(clients)` was the only gate, and an empty array is
+ * structurally valid but renders to a blank screen with no way back.
+ */
+function describeBackupProblem(incoming: AppState | undefined): string | null {
+  if (!incoming || typeof incoming !== 'object') return 'that file is not an Overload PT backup';
+  if (!Array.isArray(incoming.clients)) return 'that file is not an Overload PT backup';
+  if (incoming.clients.length === 0) return 'it contains no charts';
+  if (!Array.isArray(incoming.therapists)) return 'it has no therapist roster';
+
+  for (const client of incoming.clients) {
+    const name = client?.name ?? 'a chart';
+    if (!client?.id) return `${name} has no id`;
+    if (!client.program || !Array.isArray(client.program.days)) {
+      return `${name} has no program days`;
+    }
+    for (const key of ['sessions', 'notes', 'audit', 'bodyMetrics', 'clips', 'voiceNotes'] as const) {
+      if (!Array.isArray(client[key])) return `${name} is missing its ${key}`;
+    }
+  }
+  return null;
+}
+
 async function loadState(): Promise<LoadedState> {
   const stored = await readDoc<AppState>(STATE_DOC);
   if (stored && stored.version === STATE_VERSION && Array.isArray(stored.clients)) {
@@ -321,10 +345,15 @@ function Chart({
 
   const actor = useMemo(() => actorOf(state), [state]);
 
-  const client = useMemo(
-    () => state.clients.find((c) => c.id === state.activeClientId) ?? state.clients[0],
-    [state.clients, state.activeClientId],
-  );
+  const client = useMemo(() => {
+    const requested =
+      state.clients.find((c) => c.id === state.activeClientId) ?? state.clients[0];
+    if (state.role !== 'trainer' || !requested) return requested;
+    // Never render a chart the acting therapist cannot open, whatever the
+    // stored activeClientId says.
+    if (canAccessChart(requested, actingTherapist.id)) return requested;
+    return state.clients.find((c) => canAccessChart(c, actingTherapist.id)) ?? requested;
+  }, [state.clients, state.activeClientId, state.role, actingTherapist.id]);
 
   const visibleClients = useMemo(() => {
     if (state.role === 'patient') return client ? [client] : [];
@@ -1301,15 +1330,36 @@ function Chart({
 
       const parsed = JSON.parse(chartText) as { state?: AppState; version?: number };
       const incoming = parsed.state ?? (parsed as unknown as AppState);
-      if (!incoming || !Array.isArray(incoming.clients)) {
-        throw new Error('That file does not look like an Overload PT backup.');
-      }
+      const problem = describeBackupProblem(incoming);
+      if (problem) throw new Error(`Not importing — ${problem}.`);
       if (incoming.version !== STATE_VERSION) {
         throw new Error(
           `Backup is version ${incoming.version ?? '?'}; this app reads version ${STATE_VERSION}.`,
         );
       }
-      commit('Imported a backup', () => incoming);
+
+      commit('Imported a backup', (prev) => {
+        // Restore the data, not the exporting device's view. A therapist who
+        // imports a client's backup should not silently land in patient view,
+        // and the chart that opens has to be one that exists and that they
+        // are allowed to open.
+        const acting =
+          incoming.therapists.find((t) => t.id === prev.actingTherapistId) ??
+          incoming.therapists[0];
+        const openable = incoming.clients.filter((c) =>
+          acting ? canAccessChart(c, acting.id) : true,
+        );
+        const active =
+          openable.find((c) => c.id === prev.activeClientId) ??
+          openable[0] ??
+          incoming.clients[0];
+        return {
+          ...incoming,
+          role: prev.role,
+          actingTherapistId: acting?.id ?? incoming.actingTherapistId,
+          activeClientId: active.id,
+        };
+      });
 
       const clips = incoming.clients.reduce((n, c) => n + c.clips.length, 0);
       const media = isZip

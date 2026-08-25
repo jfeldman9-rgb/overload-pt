@@ -275,3 +275,179 @@ with zipfile.ZipFile(os.path.join(d,'nochart.zip'),'w',zipfile.ZIP_STORED) as z:
   await sheet.getByLabel('Backup file (.zip or .json)').setInputFiles(join(dir, 'nochart.zip'));
   await expect(sheet).toContainText('no chart.json');
 });
+
+test('a backup with no charts is refused instead of blanking the app', async ({ page }) => {
+  await page.goto('/');
+  await page.getByRole('button', { name: 'Trainer' }).click();
+  await page.locator('.backupbar').click();
+  const sheet = page.getByRole('dialog', { name: 'Backup' });
+
+  const crashes: string[] = [];
+  page.on('pageerror', (e) => crashes.push(e.message));
+
+  const dir = mkdtempSync(join(tmpdir(), 'overload-empty-'));
+  const { writeFileSync } = await import('node:fs');
+
+  // Structurally valid — clients IS an array — but there is nothing to render.
+  const empty = join(dir, 'empty.json');
+  writeFileSync(
+    empty,
+    JSON.stringify({
+      state: {
+        version: 2,
+        clinicName: 'X',
+        therapists: [],
+        clients: [],
+        role: 'trainer',
+        actingTherapistId: 'a',
+        activeClientId: 'b',
+        settings: {},
+        customExercises: [],
+      },
+    }),
+  );
+  await sheet.getByLabel('Backup file (.zip or .json)').setInputFiles(empty);
+  await expect(sheet).toContainText('it contains no charts');
+
+  // A chart missing the arrays the screens iterate is caught by name.
+  const broken = join(dir, 'broken.json');
+  writeFileSync(
+    broken,
+    JSON.stringify({
+      state: {
+        version: 2,
+        clinicName: 'X',
+        therapists: [{ id: 't', name: 'T', credential: '' }],
+        clients: [{ id: 'c', name: 'Half A Chart', program: { days: [] }, sessions: [] }],
+        role: 'trainer',
+        actingTherapistId: 't',
+        activeClientId: 'c',
+        settings: {},
+        customExercises: [],
+      },
+    }),
+  );
+  await sheet.getByLabel('Backup file (.zip or .json)').setInputFiles(broken);
+  await expect(sheet).toContainText('Half A Chart is missing its notes');
+
+  // The app is still alive and still on the real data.
+  expect(crashes).toEqual([]);
+  await sheet.getByRole('button', { name: 'Done' }).click();
+  await expect(page.locator('.chartswitch')).toContainText('Alex M.');
+  await expect(page.getByText('Last visit')).toBeVisible();
+});
+
+test('importing restores the data without hijacking the view', async ({ page }) => {
+  await page.goto('/');
+
+  // A client exports their own chart, which carries role 'patient'.
+  await page.getByRole('button', { name: 'Patient' }).click();
+  await page.locator('.backupbar').click();
+  const sheet = page.getByRole('dialog', { name: 'Backup' });
+  const download = page.waitForEvent('download');
+  await sheet.getByRole('button', { name: 'Your chart only, no media (JSON)' }).click();
+  const file = await download;
+  const dir = mkdtempSync(join(tmpdir(), 'overload-view-'));
+  const path = join(dir, 'client.json');
+  await file.saveAs(path);
+  await sheet.getByRole('button', { name: 'Done' }).click();
+
+  // A therapist restores it and must stay a therapist.
+  await page.getByRole('button', { name: 'Trainer' }).click();
+  await page.locator('.backupbar').click();
+  await sheet.getByLabel('Backup file (.zip or .json)').setInputFiles(path);
+  await expect(sheet).toContainText('1 charts');
+  await sheet.getByRole('button', { name: 'Done' }).click();
+
+  await expect(page.locator('.roleswitch button[aria-pressed="true"]')).toHaveText('Trainer');
+  await expect(page.locator('.chartswitch')).toContainText('Dana R. · viewing Alex M.');
+  await expect(page.getByRole('button', { name: 'Roster' })).toBeVisible();
+});
+
+test('a backup cannot open a chart the acting therapist may not see', async ({ page }) => {
+  await page.goto('/');
+  await page.getByRole('button', { name: 'Trainer' }).click();
+  await page.locator('.backupbar').click();
+  const sheet = page.getByRole('dialog', { name: 'Backup' });
+
+  // Hand-built: activeClientId points at a chart that is not shared with the
+  // acting therapist. Restoring must not put that chart on screen.
+  const dir = mkdtempSync(join(tmpdir(), 'overload-perm-'));
+  const { writeFileSync } = await import('node:fs');
+  const chart = (id: string, name: string, therapistId: string, shared: boolean) => ({
+    id,
+    name,
+    condition: 'test',
+    therapistId,
+    sharedTherapistIds: [],
+    sharedWithClinic: shared,
+    program: { id: `p_${id}`, name: 'P', days: [] },
+    sessions: [],
+    notes: [],
+    audit: [],
+    bodyMetrics: [],
+    clips: [],
+    voiceNotes: [],
+    favorites: [],
+    recentExercises: [],
+  });
+  const path = join(dir, 'crafted.json');
+  writeFileSync(
+    path,
+    JSON.stringify({
+      state: {
+        version: 2,
+        clinicName: 'Riverside Sports PT',
+        therapists: [
+          { id: 'th_dana', name: 'Dana R.', credential: 'DPT' },
+          { id: 'th_priya', name: 'Priya N.', credential: 'DPT, OCS' },
+        ],
+        clients: [
+          chart('cl_mine', 'Mine M.', 'th_dana', false),
+          chart('cl_theirs', 'Private P.', 'th_priya', false),
+        ],
+        role: 'trainer',
+        actingTherapistId: 'th_dana',
+        activeClientId: 'cl_theirs',
+        settings: { units: 'lb', lengthUnits: 'in', autoStartRest: true, restAlerts: true, clinicalFields: true, clipMaxSec: 25 },
+        customExercises: [],
+      },
+    }),
+  );
+
+  await sheet.getByLabel('Backup file (.zip or .json)').setInputFiles(path);
+  await expect(sheet).toContainText('2 charts');
+  await sheet.getByRole('button', { name: 'Done' }).click();
+
+  // Dana's own chart opened; the colleague's private one did not.
+  await expect(page.locator('.chartswitch')).toContainText('viewing Mine M.');
+  await expect(page.locator('main.content')).not.toContainText('Private P.');
+  await page.locator('.chartswitch').click();
+  await expect(page.locator('.rostercard.locked')).toContainText('Private P.');
+});
+
+test('the body metric sheet will not silently swallow a save with no date', async ({ page }) => {
+  await page.goto('/');
+  await page.getByRole('button', { name: 'Trainer' }).click();
+  await nav(page).getByRole('button', { name: 'Body' }).click();
+
+  const before = await page.locator('.metricrow').count();
+  await page.getByRole('button', { name: '+ Log' }).click();
+  const sheet = page.getByRole('dialog', { name: 'Log body metrics' });
+
+  await sheet.getByLabel('Waist', { exact: true }).fill('33.1');
+  await expect(sheet.getByRole('button', { name: 'Save measurements' })).toBeEnabled();
+
+  // Clearing the date used to leave Save looking live while doing nothing.
+  await sheet.locator('#bm-date').fill('');
+  await expect(sheet).toContainText('Pick a date before saving');
+  await expect(sheet.getByRole('button', { name: 'Save measurements' })).toBeDisabled();
+
+  // Putting a date back saves, and the reading is really there.
+  await sheet.locator('#bm-date').fill('2026-08-24');
+  await expect(sheet.getByRole('button', { name: 'Save measurements' })).toBeEnabled();
+  await sheet.getByRole('button', { name: 'Save measurements' }).click();
+
+  await expect(page.locator('.metricrow')).toHaveCount(before + 1);
+  await expect(page.locator('.tile').filter({ hasText: 'Waist' }).first()).toContainText('33.1');
+});
