@@ -3,7 +3,7 @@ import { test, type Locator, type Page } from '@playwright/test';
 /**
  * Scripted product walkthrough recorded as a video artifact. Deliberate pauses
  * keep it followable at normal playback speed; the assertions live in
- * tests/workout.spec.ts.
+ * tests/workout.spec.ts, tests/clinic.spec.ts, and tests/recording.spec.ts.
  */
 
 const BEAT = 1400;
@@ -19,24 +19,43 @@ async function reveal(page: Page, target: Locator) {
 }
 
 test('product walkthrough', async ({ page }) => {
-  test.setTimeout(180_000);
+  test.setTimeout(300_000);
 
   await page.goto('/');
   await beat(page, 2);
 
-  // ── Trainer opens the app: pinned note, then the full ledger ──────────
-  await reveal(page, page.locator('.note-pinned'));
+  const nav = page.getByRole('navigation', { name: 'Main navigation' });
+
+  // ── The ten-second chart review ───────────────────────────────────────
+  await reveal(page, page.locator('.card').filter({ hasText: 'Peak pain' }).first());
+  await beat(page, 3);
+
+  await reveal(page, page.getByText('Objective'));
+  await beat(page, 3);
+
+  await reveal(page, page.getByText('Handoff — who changed what'));
   await beat(page, 2.5);
 
-  await page.getByRole('button', { name: /Open full notes ledger/ }).click();
-  await beat(page, 1.5);
+  // ── Backup status: honest about where the data is ─────────────────────
+  await page.evaluate(() => window.scrollTo({ top: 0, behavior: 'smooth' }));
+  await beat(page);
+  await page.locator('.backupbar').click();
+  await beat(page, 3);
+  await page.getByRole('button', { name: 'Done' }).click();
+  await beat(page);
 
-  const sheet = page.locator('.sheet-body');
-  for (let i = 0; i < 4; i++) {
-    await sheet.evaluate((el) => el.scrollBy({ top: 190, behavior: 'smooth' }));
-    await beat(page, 0.9);
-  }
-  await beat(page, 1);
+  // ── Clinic roster: a colleague opens the shared chart ─────────────────
+  await page.locator('.chartswitch').click();
+  await beat(page, 2.5);
+  await page.locator('.rosteritem').filter({ hasText: 'Priya N.' }).click();
+  await beat(page, 2);
+  await page.getByRole('button', { name: 'Done' }).click();
+  await beat(page, 2);
+
+  await page.locator('.chartswitch').click();
+  await beat(page);
+  await page.locator('.rosteritem').filter({ hasText: 'Dana R.' }).click();
+  await beat(page);
   await page.getByRole('button', { name: 'Done' }).click();
   await beat(page);
 
@@ -56,7 +75,7 @@ test('product walkthrough', async ({ page }) => {
   await beat(page, 1);
 
   // Long unbroken pause so the countdown is unmistakably live.
-  await page.waitForTimeout(14_000);
+  await page.waitForTimeout(8_000);
 
   await page.getByRole('button', { name: '+15s' }).click();
   await beat(page, 2.5);
@@ -84,22 +103,49 @@ test('product walkthrough', async ({ page }) => {
   await page.getByRole('button', { name: 'Skip rest' }).click();
   await beat(page, 1.5);
 
-  // ── Last-time comparison carried forward from the previous session ────
-  await reveal(page, goblet.locator('.lastperf'));
+  // ── Movement video: two dates, side by side ───────────────────────────
+  await goblet.getByRole('button', { name: /Movement video for Goblet Squat/ }).click();
+  await beat(page, 2.5);
+  await page.getByRole('button', { name: '⇄ Compare' }).click();
+  await beat(page, 3);
+  await page.getByRole('button', { name: '0.5×' }).click();
+  await beat(page, 1.5);
+  await page.getByRole('button', { name: 'Play both' }).click();
   await beat(page, 2);
-
-  // ── Exercise library search by alias ──────────────────────────────────
-  const addBtn = page.getByRole('button', { name: '+ Add exercise to this session' });
-  await reveal(page, addBtn);
-  await addBtn.click();
-  await beat(page, 1.2);
-  await page.getByLabel('Search exercises').pressSequentially('RDL', { delay: 260 });
+  await page.getByRole('button', { name: 'Pause both' }).click();
+  await beat(page, 1);
+  await page.getByRole('button', { name: '⏺ Record', exact: true }).click();
+  await beat(page, 1.5);
+  await page.getByRole('button', { name: /Open camera/ }).click();
+  await beat(page, 2);
+  await page.getByRole('button', { name: /^⏺ Record \(\d+s max\)$/ }).click();
+  await beat(page, 2.5);
+  await page.getByRole('button', { name: /Stop and review/ }).click();
+  await beat(page, 2.5);
+  await page.getByRole('button', { name: /Save clip to this exercise/ }).click();
   await beat(page, 2.5);
   await page.getByRole('button', { name: 'Done' }).click();
-  await beat(page, 1.2);
+  await beat(page);
+
+  // ── Voice note: dictate straight into the session note ────────────────
+  await page.evaluate(() => window.scrollTo({ top: 0, behavior: 'smooth' }));
+  await beat(page);
+  await page.getByRole('button', { name: 'Dictate a session note' }).click();
+  await beat(page, 2.5);
+  await page.getByRole('button', { name: 'Start voice note' }).click();
+  await beat(page, 3);
+  await page.getByRole('button', { name: 'Stop voice note' }).click();
+  await beat(page, 2);
+  await page
+    .getByLabel('Session note (editable)')
+    .pressSequentially('Step-downs clean on both sides. Pain steady at 2 out of 10.', {
+      delay: 28,
+    });
+  await beat(page, 2);
+  await page.getByRole('button', { name: /Save note as/ }).click();
+  await beat(page, 1.5);
 
   // ── Trainer approves a progression, which lands in the change log ─────
-  const nav = page.getByRole('navigation', { name: 'Main navigation' });
   await nav.getByRole('button', { name: 'Program' }).click();
   await beat(page, 1.5);
 
@@ -109,17 +155,52 @@ test('product walkthrough', async ({ page }) => {
   await gobletRx.getByRole('button', { name: /Approve/ }).click();
   await beat(page, 2.5);
 
-  await nav.getByRole('button', { name: 'History' }).click();
+  // ── Body metrics: log one, then read the trend ────────────────────────
+  await nav.getByRole('button', { name: 'Body' }).click();
+  await beat(page, 2);
+  await page.getByRole('button', { name: '+ Log' }).click();
+  await beat(page, 1.5);
+  await page.getByLabel('Waist', { exact: true }).pressSequentially('33.4', { delay: 220 });
   await beat(page);
+  await page.getByLabel('Body fat', { exact: true }).pressSequentially('21.6', { delay: 220 });
+  await beat(page);
+  await page.getByRole('button', { name: 'Calipers' }).click();
+  await beat(page, 1.5);
+  await page.getByRole('button', { name: 'Save measurements' }).click();
+  await beat(page, 2.5);
+
+  for (let i = 0; i < 4; i++) {
+    await page.evaluate(() => window.scrollBy({ top: 260, behavior: 'smooth' }));
+    await beat(page, 0.9);
+  }
+  await beat(page, 1.5);
+
+  // ── History: volume, rest, composition, then the per-lift detail ──────
+  await nav.getByRole('button', { name: 'History' }).click();
+  await beat(page, 1.5);
+  for (let i = 0; i < 4; i++) {
+    await page.evaluate(() => window.scrollBy({ top: 260, behavior: 'smooth' }));
+    await beat(page, 0.9);
+  }
+  await beat(page, 1.5);
+
+  await page.evaluate(() => window.scrollTo({ top: 0, behavior: 'smooth' }));
+  await beat(page);
+  await page.getByRole('button', { name: 'Lifts' }).click();
+  await beat(page, 1.5);
+  for (let i = 0; i < 3; i++) {
+    await page.evaluate(() => window.scrollBy({ top: 260, behavior: 'smooth' }));
+    await beat(page, 0.9);
+  }
+  await beat(page, 1.5);
+
   await page.getByRole('button', { name: /Changes/ }).click();
   await beat(page, 3);
 
-  // ── Overload trends ───────────────────────────────────────────────────
-  await page.getByRole('button', { name: 'Overload' }).click();
-  await beat(page, 2);
-  for (let i = 0; i < 4; i++) {
-    await page.evaluate(() => window.scrollBy({ top: 230, behavior: 'smooth' }));
-    await beat(page, 1);
-  }
-  await beat(page, 2);
+  // ── Client view: their own chart, without the clinical handoff ────────
+  await page.evaluate(() => window.scrollTo({ top: 0, behavior: 'smooth' }));
+  await page.getByRole('button', { name: 'Notes' }).click();
+  await beat(page, 2.5);
+  await page.getByRole('button', { name: 'Patient' }).click();
+  await beat(page, 3);
 });
