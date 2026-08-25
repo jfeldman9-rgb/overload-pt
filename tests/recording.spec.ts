@@ -169,3 +169,81 @@ test('a client is not served the room audio of a shared note until they ask', as
   await note.getByRole('button', { name: /Play audio/ }).click();
   await expect(note.locator('audio')).toBeVisible();
 });
+
+test('a front-camera-only device still opens the camera', async ({ page }) => {
+  // Filming a lift wants the rear camera, but a device that only has a front
+  // one rejects the constraint outright instead of falling back.
+  await page.addInitScript(() => {
+    const real = navigator.mediaDevices.getUserMedia.bind(navigator.mediaDevices);
+    const calls: string[] = [];
+    (window as unknown as { __calls: string[] }).__calls = calls;
+    Object.defineProperty(navigator, 'mediaDevices', {
+      configurable: true,
+      value: {
+        getUserMedia: (constraints: MediaStreamConstraints) => {
+          calls.push(JSON.stringify(constraints.video));
+          if (typeof constraints.video === 'object' && 'facingMode' in constraints.video) {
+            const error = new Error('OverconstrainedError');
+            error.name = 'OverconstrainedError';
+            return Promise.reject(error);
+          }
+          return real(constraints);
+        },
+      },
+    });
+  });
+
+  await page.goto('/');
+  await page.getByRole('button', { name: 'Trainer' }).click();
+  await nav(page).getByRole('button', { name: 'History' }).click();
+  await page.getByRole('button', { name: 'Lifts' }).click();
+  await page
+    .locator('.card')
+    .filter({ hasText: 'Goblet Squat' })
+    .first()
+    .getByRole('button', { name: /Movement video/ })
+    .click();
+
+  const sheet = page.getByRole('dialog', { name: /Movement — Goblet Squat/ });
+  await sheet.getByRole('button', { name: '⏺ Record', exact: true }).click();
+  await sheet.getByRole('button', { name: /Open camera/ }).click();
+
+  // It retried without facingMode rather than reporting no camera.
+  await expect(sheet.getByRole('button', { name: /^⏺ Record \(\d+s max\)$/ })).toBeVisible();
+  const calls = await page.evaluate(() => (window as unknown as { __calls: string[] }).__calls);
+  expect(calls).toHaveLength(2);
+  expect(calls[0]).toContain('facingMode');
+  expect(calls[1]).not.toContain('facingMode');
+});
+
+test('a browser that refuses simultaneous playback says so', async ({ page }) => {
+  await page.goto('/');
+  await page.getByRole('button', { name: 'Trainer' }).click();
+  await page.locator('button.card', { hasText: 'Lower — Rehab Block A' }).first().click();
+
+  const goblet = page.locator('.exercise').filter({ hasText: 'Goblet Squat' });
+  await goblet.getByRole('button', { name: /Movement video for Goblet Squat/ }).click();
+  const sheet = page.getByRole('dialog', { name: /Movement — Goblet Squat/ });
+
+  // Record one real clip so a panel has a video element to refuse.
+  await sheet.getByRole('button', { name: '⏺ Record', exact: true }).click();
+  await sheet.getByRole('button', { name: /Open camera/ }).click();
+  await sheet.getByRole('button', { name: /^⏺ Record \(\d+s max\)$/ }).click();
+  await page.waitForTimeout(1600);
+  await sheet.getByRole('button', { name: /Stop and review/ }).click();
+  await sheet.getByRole('button', { name: /Save clip to this exercise/ }).click();
+
+  // Safari style: a rejected play() with no error surfaced anywhere.
+  await page.evaluate(() => {
+    HTMLMediaElement.prototype.play = () => Promise.reject(new Error('NotAllowedError'));
+  });
+
+  await sheet.getByRole('button', { name: '⇄ Compare' }).click();
+  await sheet.getByRole('button', { name: 'Play both' }).click();
+  await expect(sheet).toContainText('use the controls on each clip');
+
+  // Reset clears the warning rather than leaving it stuck on screen.
+  await sheet.getByRole('button', { name: 'Reset' }).click();
+  await expect(sheet).not.toContainText('use the controls on each clip');
+});
+

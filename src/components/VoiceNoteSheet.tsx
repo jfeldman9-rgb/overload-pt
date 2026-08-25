@@ -3,7 +3,8 @@ import { useApp } from '../store/AppContext';
 import { Sheet } from './Sheet';
 import {
   audioMimeType,
-  canRecordMedia,
+  captureBlock,
+  captureBlockMessage,
   formatBytes,
   speechRecognitionCtor,
   type SpeechRecognitionLike,
@@ -59,6 +60,8 @@ export function VoiceNoteSheet({
   const recordingRef = useRef(false);
   const finalRef = useRef('');
   const listeningRef = useRef(false);
+  /** Distinguishes the user pressing stop from the browser taking the mic. */
+  const stopRequestedRef = useRef(false);
 
   const cleanup = useCallback(() => {
     recordingRef.current = false;
@@ -178,9 +181,10 @@ export function VoiceNoteSheet({
     startedAtRef.current = Date.now();
     setElapsed(0);
 
-    if (!canRecordMedia()) {
+    const block = captureBlock();
+    if (block !== 'ok') {
       toReview();
-      setNotice('No microphone on this device — type the note instead.');
+      setNotice(`${captureBlockMessage(block, 'microphone')} Type the note instead.`);
       return;
     }
 
@@ -198,22 +202,37 @@ export function VoiceNoteSheet({
         const url = URL.createObjectURL(blob);
         audioUrlRef.current = url;
         setAudio({ blob, url });
+        // Safari can hand the microphone to the speech recogniser and end the
+        // recording under us. Say so rather than looking like a stray tap.
+        const interrupted = !stopRequestedRef.current;
         cleanup();
         toReview();
+        if (interrupted) {
+          setNotice(
+            'Recording stopped on its own — the browser took the microphone back. Everything captured up to that point is saved.',
+          );
+        }
       };
       recorderRef.current = recorder;
+      stopRequestedRef.current = false;
       recorder.start();
       recordingRef.current = true;
       setPhase('recording');
       navigator.vibrate?.(20);
       startTranscription();
-    } catch {
+    } catch (e) {
       toReview();
-      setNotice('Microphone access was denied — type the note instead.');
+      const name = e instanceof Error ? e.name : '';
+      setNotice(
+        name === 'NotReadableError' || name === 'AbortError'
+          ? 'The microphone is busy — another app or tab has it. Type the note instead.'
+          : 'Microphone access was denied — type the note instead.',
+      );
     }
   };
 
   const stop = () => {
+    stopRequestedRef.current = true;
     recordingRef.current = false;
     try {
       recognitionRef.current?.stop();
@@ -272,6 +291,9 @@ export function VoiceNoteSheet({
             </span>
             <span>Start dictating</span>
           </button>
+          {captureBlock() !== 'ok' && (
+            <div className="notice warn">{captureBlockMessage(captureBlock(), 'microphone')}</div>
+          )}
           <div className="tiny faint" style={{ marginTop: 10 }}>
             Audio stays on this device until backup runs. Nothing is sent to a transcription
             service.

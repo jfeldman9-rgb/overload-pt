@@ -88,6 +88,7 @@ export function VideoCompare({ clips, leftId, rightId, onPick }: VideoComparePro
   const leftRef = useRef<HTMLVideoElement | null>(null);
   const rightRef = useRef<HTMLVideoElement | null>(null);
   const [rate, setRate] = useState(1);
+  const [playHint, setPlayHint] = useState('');
 
   const left = clips.find((c) => c.id === leftId) ?? null;
   const right = clips.find((c) => c.id === rightId) ?? null;
@@ -102,6 +103,31 @@ export function VideoCompare({ clips, leftId, rightId, onPick }: VideoComparePro
     for (const ref of [leftRef, rightRef]) {
       if (ref.current) fn(ref.current);
     }
+  };
+
+  /**
+   * Safari can refuse to play a second inline video, and a rejected `play()`
+   * is silent — the panel just sits there. Start both inside the same gesture,
+   * then report what actually happened.
+   */
+  const playBoth = async () => {
+    setPlayHint('');
+    const targets = [leftRef.current, rightRef.current].filter(
+      (v): v is HTMLVideoElement => v !== null,
+    );
+    if (!targets.length) return;
+    const started = targets.map((video) => {
+      video.currentTime = 0;
+      return video.play();
+    });
+    const results = await Promise.allSettled(started);
+    const failed = results.filter((r) => r.status === 'rejected').length;
+    if (!failed) return;
+    setPlayHint(
+      failed === targets.length
+        ? 'This browser blocked playback — use the controls on each clip.'
+        : 'This browser will only play one clip at a time — use the controls on each clip.',
+    );
   };
 
   return (
@@ -133,15 +159,7 @@ export function VideoCompare({ clips, leftId, rightId, onPick }: VideoComparePro
       </div>
 
       <div className="compare-controls">
-        <button
-          className="btn sm primary grow"
-          onClick={() =>
-            both((v) => {
-              v.currentTime = 0;
-              void v.play();
-            })
-          }
-        >
+        <button className="btn sm primary grow" onClick={() => void playBoth()}>
           ▶ Play both
         </button>
         <button className="btn sm grow" onClick={() => both((v) => v.pause())}>
@@ -149,16 +167,19 @@ export function VideoCompare({ clips, leftId, rightId, onPick }: VideoComparePro
         </button>
         <button
           className="btn sm grow"
-          onClick={() =>
+          onClick={() => {
+            setPlayHint('');
             both((v) => {
               v.pause();
               v.currentTime = 0;
-            })
-          }
+            });
+          }}
         >
           ↺ Reset
         </button>
       </div>
+
+      {playHint && <div className="notice warn">{playHint}</div>}
 
       <div className="row" style={{ marginTop: 8 }}>
         <span className="tiny faint">Speed</span>

@@ -29,12 +29,35 @@ export function audioMimeType(): string {
   return pickType(AUDIO_TYPES);
 }
 
-export function canRecordMedia(): boolean {
-  return (
-    typeof MediaRecorder !== 'undefined' &&
-    typeof navigator !== 'undefined' &&
-    Boolean(navigator.mediaDevices?.getUserMedia)
-  );
+/** Why capture is unavailable, so the message can name the real cause. */
+export type CaptureBlock = 'ok' | 'insecure' | 'no-recorder' | 'no-devices';
+
+/**
+ * Order matters. Over plain http — which is how a phone reaches a laptop dev
+ * server on the same Wi-Fi — Safari and Chrome both hide
+ * `navigator.mediaDevices` entirely. Checking the secure context first stops
+ * the app blaming the device for a transport problem.
+ */
+export function captureBlock(): CaptureBlock {
+  if (typeof window !== 'undefined' && window.isSecureContext === false) return 'insecure';
+  if (typeof MediaRecorder === 'undefined') return 'no-recorder';
+  if (typeof navigator === 'undefined' || !navigator.mediaDevices?.getUserMedia) {
+    return 'no-devices';
+  }
+  return 'ok';
+}
+
+export function captureBlockMessage(block: CaptureBlock, device: 'camera' | 'microphone'): string {
+  switch (block) {
+    case 'insecure':
+      return `The ${device} needs a secure connection. This page is on http, so the browser hides it — open the app over https (or on localhost) and it becomes available.`;
+    case 'no-recorder':
+      return `This browser cannot record media. On iPhone this needs iOS 14.3 or newer.`;
+    case 'no-devices':
+      return `No ${device} is available to this browser.`;
+    default:
+      return '';
+  }
 }
 
 /** Chrome exposes `webkitSpeechRecognition`; Firefox exposes nothing. */

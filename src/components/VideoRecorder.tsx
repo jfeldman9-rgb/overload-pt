@@ -1,6 +1,12 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useApp } from '../store/AppContext';
-import { canRecordMedia, formatBytes, posterFromVideo, videoMimeType } from '../lib/media';
+import {
+  captureBlock,
+  captureBlockMessage,
+  formatBytes,
+  posterFromVideo,
+  videoMimeType,
+} from '../lib/media';
 
 interface VideoRecorderProps {
   exerciseId: string;
@@ -13,6 +19,40 @@ interface VideoRecorderProps {
 }
 
 type Phase = 'idle' | 'live' | 'recording' | 'review' | 'error';
+
+/**
+ * A rear camera is the right default for filming someone lift, but a device
+ * that only has a front camera rejects the constraint outright rather than
+ * falling back, so ask again without it before giving up.
+ */
+async function requestCameraStream(): Promise<MediaStream> {
+  try {
+    return await navigator.mediaDevices.getUserMedia({
+      video: { facingMode: 'environment', width: { ideal: 720 }, height: { ideal: 1280 } },
+      audio: false,
+    });
+  } catch (e) {
+    const name = e instanceof Error ? e.name : '';
+    if (name === 'OverconstrainedError' || name === 'NotFoundError') {
+      return navigator.mediaDevices.getUserMedia({ video: true, audio: false });
+    }
+    throw e;
+  }
+}
+
+function cameraErrorMessage(error: unknown): string {
+  const name = error instanceof Error ? error.name : '';
+  if (name === 'NotAllowedError' || name === 'SecurityError') {
+    return 'Camera access was denied. Allow it in the browser settings, then try again.';
+  }
+  if (name === 'NotFoundError' || name === 'OverconstrainedError') {
+    return 'This device has no camera the browser can use.';
+  }
+  if (name === 'NotReadableError' || name === 'AbortError') {
+    return 'The camera is busy — another app or tab has it. Close that and try again.';
+  }
+  return 'The camera could not be opened in this browser.';
+}
 
 /**
  * Phone-camera capture for a single movement. Clips are capped short by
@@ -70,18 +110,16 @@ export function VideoRecorder({
   }, [phase, maxSec]);
 
   const openCamera = async () => {
-    if (!canRecordMedia()) {
+    const block = captureBlock();
+    if (block !== 'ok') {
       setPhase('error');
       setError(
-        'This browser cannot record video. You can still compare clips recorded on another device.',
+        `${captureBlockMessage(block, 'camera')} You can still compare clips recorded elsewhere.`,
       );
       return;
     }
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: 'environment', width: { ideal: 720 }, height: { ideal: 1280 } },
-        audio: false,
-      });
+      const stream = await requestCameraStream();
       streamRef.current = stream;
       if (previewRef.current) {
         previewRef.current.srcObject = stream;
@@ -90,11 +128,7 @@ export function VideoRecorder({
       setPhase('live');
     } catch (e) {
       setPhase('error');
-      setError(
-        e instanceof Error && e.name === 'NotAllowedError'
-          ? 'Camera access was denied. Allow it in the browser settings to record a clip.'
-          : 'No camera available on this device.',
-      );
+      setError(cameraErrorMessage(e));
     }
   };
 
@@ -189,6 +223,11 @@ export function VideoRecorder({
               <div className="tiny faint">
                 Clips are capped at {maxSec}s and stay on the device until backup runs.
               </div>
+              {captureBlock() !== 'ok' && (
+                <div className="tiny" style={{ marginTop: 8, color: 'var(--warn)' }}>
+                  {captureBlockMessage(captureBlock(), 'camera')}
+                </div>
+              )}
             </div>
           </div>
           <button className="btn primary block" style={{ marginTop: 12 }} onClick={openCamera}>

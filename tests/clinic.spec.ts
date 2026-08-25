@@ -423,7 +423,9 @@ test('a dictated note still saves when the browser has no microphone', async ({ 
 
   const sheet = page.getByRole('dialog', { name: 'Dictate a session note' });
   await sheet.getByRole('button', { name: 'Start voice note' }).click();
-  await expect(sheet).toContainText('No microphone on this device');
+  // Secure context, but the browser exposes no capture device at all.
+  await expect(sheet).toContainText('No microphone is available to this browser');
+  await expect(sheet).toContainText('Type the note instead');
 
   await sheet
     .getByLabel('Session note (editable)')
