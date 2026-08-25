@@ -1,0 +1,23 @@
+import { defineConfig } from '@playwright/test';
+
+/** Separate config so the recorded walkthrough never runs in the test suite. */
+export default defineConfig({
+  testDir: './demo',
+  outputDir: './demo-output',
+  reporter: [['list']],
+  use: {
+    baseURL: 'http://localhost:4173',
+    browserName: 'chromium',
+    viewport: { width: 430, height: 932 },
+    deviceScaleFactor: 2,
+    isMobile: true,
+    hasTouch: true,
+    video: { mode: 'on', size: { width: 430, height: 932 } },
+  },
+  webServer: {
+    command: 'npm run preview -- --port 4173',
+    url: 'http://localhost:4173',
+    reuseExistingServer: true,
+    timeout: 60_000,
+  },
+});
