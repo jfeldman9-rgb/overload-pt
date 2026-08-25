@@ -112,7 +112,11 @@ export function VideoRecorder({
       const blob = new Blob(chunksRef.current, { type });
       const url = URL.createObjectURL(blob);
       clipUrlRef.current = url;
-      setClip({ blob, url, poster: posterRef.current });
+      // Grab the still while the preview is still live. A frame from the end
+      // of the rep beats the early one, which can land before the camera has
+      // warmed up and come back black.
+      const late = previewRef.current ? posterFromVideo(previewRef.current) : '';
+      setClip({ blob, url, poster: late || posterRef.current });
       setElapsed((Date.now() - startedAtRef.current) / 1000);
       setPhase('review');
       stopStream();
